@@ -137,44 +137,67 @@
   <!-- Floating Action Button -->
   <div class="fab" aria-label="Open food recommender" onclick="openRecommender()">🍽️</div>
 
-  <!-- Recommender Modal -->
-  <div class="modal" id="recommenderModal">
-    <div class="modal-content">
-      <span class="modal-close" onclick="closeRecommender()">&times;</span>
-      <h2>Discover Your Next Dish</h2>
-      <p>Tell us what you want you food reccommended by..</p>
+  <!-- Food Recommender Modal (Step UI) -->
+<div class="modal" id="recommenderModal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="closeRecommender()">&times;</span>
+    <h2>Food Recommender</h2>
+    <p class="caption">Pick how you want to get help.</p>
 
-      <label style="display:block; margin:1rem 0 0.5rem;">What are you in the mood for?</label>
-      <select id="recoSelect" style="width:100%; padding:0.6rem; margin-bottom:1rem;">
-        <option value="spicy">Ingredients I have in my pantry</option>
-        <option value="soups">Food name</option>
-        <option value="rice">Talk to a chatbot</option>
-      </select>
+    <!-- STEP 0: choose mode -->
+    <div id="reco-step-0" class="reco-step">
+      <div class="reco-grid">
+        <button id="startChatBtn" class="reco-big">💬 Talk to a Chatbot</button>
+        <button id="startRecoBtn" class="reco-big">🍽️ Get Recommendations</button>
+      </div>
+    </div>
 
-      <button id="recoBtn" style="background: var(--primary-green); color:white; border:none; padding:0.8rem 1rem; border-radius:6px; width:100%;">Get Recommendations</button>
+    <!-- STEP 1: choose recommendation type -->
+    <div id="reco-step-1" class="reco-step" style="display:none">
+      <button id="backTo0" class="reco-back">← Back</button>
+      <h3>How should we recommend?</h3>
+      <div class="reco-grid">
+        <button id="byIngredientsBtn" class="reco-big">🧄 By Ingredients</button>
+        <button id="byNameBtn" class="reco-big">🍛 By Food Name</button>
+      </div>
+    </div>
 
-      <div id="recoResults" style="margin-top:1rem;"></div>
+    <!-- STEP CHAT: chatbot -->
+    <div id="reco-step-chat" class="reco-step" style="display:none">
+      <button id="backTo0b" class="reco-back">← Back</button>
+      <h3>Chatbot</h3>
+      <div id="chatWindow" class="chat-window"></div>
+      <div class="chat-row">
+        <input id="chatInput" placeholder="Ask about dishes, ingredients, ideas…" />
+        <button id="chatSendBtn">Send</button>
+      </div>
+      <small class="caption">The bot uses your recipe knowledge base to answer and suggest dishes.</small>
+    </div>
+
+    <!-- STEP INGREDIENTS -->
+    <div id="reco-step-ingredients" class="reco-step" style="display:none">
+      <button id="backTo1a" class="reco-back">← Back</button>
+      <h3>Recommend by Ingredients</h3>
+      <p class="caption">e.g., rice, tomato, pepper, onions</p>
+      <input id="reco-ingredients" placeholder="Type ingredients, comma-separated"/>
+      <label>Match threshold (0.5–1.0)</label>
+      <input id="thres-ingredients" type="number" min="0.5" max="1" step="0.05" value="0.7"/>
+      <button id="btn-ingredients">Find Recipes</button>
+      <div id="recoResults" class="reco-results"></div>
+    </div>
+
+    <!-- STEP NAME -->
+    <div id="reco-step-name" class="reco-step" style="display:none">
+      <button id="backTo1b" class="reco-back">← Back</button>
+      <h3>Recommend by Food Name</h3>
+      <input id="reco-name" placeholder="e.g., Jollof Rice"/>
+      <button id="btn-name">Find Recipes</button>
+      <div id="recoResultsName" class="reco-results"></div>
     </div>
   </div>
+</div>
 
-  <!-- Basic modal controls (keep if not already in app.js) -->
-  <script>
-    function openRecommender() {
-      var m = document.getElementById('recommenderModal');
-      if (m) { m.style.display = 'flex'; }
-    }
-    function closeRecommender() {
-      var m = document.getElementById('recommenderModal');
-      if (m) { m.style.display = 'none'; }
-    }
-    // API base for the recommender client
-    window.RECO_API_BASE = 'http://localhost:8000';
-  </script>
 
-  <!-- Your site scripts -->
-  <script src="js/app.js" defer></script>
 
-  <!-- Recommender client (make sure the filename matches yours) -->
-  <script src="recommender_client.js"></script>
 </body>
 </html>
