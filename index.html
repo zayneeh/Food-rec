@@ -16,7 +16,6 @@
         <li><a href="#articles">Articles</a></li>
         <li><a href="#history">History</a></li>
         <li><a href="#recipes">Recipes</a></li>
-        <li><a href="#news">News</a></li>
         <li><a href="#about">About</a></li>
         <!-- Make this open the modal, don't navigate to a JS file -->
         <li><a href="javascript:void(0)" onclick="openRecommender()">Food Recommender</a></li>
@@ -34,7 +33,7 @@
   <!-- Search -->
   <div class="search-container">
     <div class="search-box">
-      <input type="text" placeholder="Search articles, recipes, history...">
+      <input type="text" placeholder="Search">
       <button>Search</button>
     </div>
   </div>
@@ -197,7 +196,8 @@
   </div>
 </div>
 
-
+<script>window.RECO_API_BASE = '/api/recommend';</script>
+<script src="recommender.js"></script>
 
 </body>
 </html>

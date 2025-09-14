@@ -1,0 +1,14 @@
+{
+  "name": "zee-food-archive",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:emb": "node scripts/build-embeddings.mjs",
+    "build:site": "echo Skip",
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.16.0",
+    "papaparse": "^5.4.1"
+  }
+}
