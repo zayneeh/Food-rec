@@ -1,0 +1,10 @@
+.json
+__pycache__/
+service_account.json
+.env
+.vscode/
+.DS_Store
+node_modules/
+dist/
+build/
+*.log
