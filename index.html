@@ -18,7 +18,8 @@
         <li><a href="#recipes">Recipes</a></li>
         <li><a href="#news">News</a></li>
         <li><a href="#about">About</a></li>
-        <li><a href="javascript:void(0)" onclick="openRecommender()">Food Recommender</a></li></li>
+        <!-- Make this open the modal, don't navigate to a JS file -->
+        <li><a href="javascript:void(0)" onclick="openRecommender()">Food Recommender</a></li>
       </ul>
       <div class="menu-toggle">☰</div>
     </nav>
@@ -41,50 +42,25 @@
   <!-- Main Content -->
   <div class="container">
     <!-- Featured Articles -->
-
-
-    
     <section class="featured" id="articles">
       <h2 class="section-title">Featured Articles</h2>
-      <div class="featured-grid">
-        <article class="article-card">
-          <div class="article-image"></div>
-          <div class="article-content">
-            <span class="article-category">History</span>
-            <h3 class="article-title">The Jollof Wars: A Historical Perspective</h3>
-            <p class="article-excerpt">Tracing the origins of West Africa's most beloved dish through centuries of cultural exchange...</p>
-            <div class="article-meta">
-              <span>5 min read</span>
-              <span>2 days ago</span>
-            </div>
-          </div>
-        </article>
 
-        <article class="article-card">
+      <div class="featured-grid">
+        <!-- Single (only) featured article -->
+        <a class="article-card" href="data\articles\science_of_cooking.html" title="Read: The Science of Cooking">
           <div class="article-image image-brown"></div>
           <div class="article-content">
-            <span class="article-category">Traditional</span>
-            <h3 class="article-title">Palm Wine: From Tree to Table</h3>
-            <p class="article-excerpt">The ancient art of palm wine tapping and its role in Nigerian ceremonies and daily life...</p>
-            <div class="article-meta">
-              <span>7 min read</span>
-              <span>1 week ago</span>
-            </div>
-          </div>
-        </article>
-
-        <article class="article-card">
-          <div class="article-image image-green"></div>
-          <div class="article-content">
-            <span class="article-category">Regional</span>
-            <h3 class="article-title">Suya: The Spice Route Connection</h3>
-            <p class="article-excerpt">How trans-Saharan trade routes influenced Northern Nigeria's iconic street food...</p>
+            <span class="article-category">Food Science</span>
+            <h3 class="article-title">The Science of Cooking</h3>
+            <p class="article-category-description">
+              Enzymes, fermentation, tenderizing with pineapple, and the chemistry behind textures, aromas, and flavors.
+            </p>
             <div class="article-meta">
               <span>6 min read</span>
-              <span>2 weeks ago</span>
+              <span>Mar 24, 2025</span>
             </div>
           </div>
-        </article>
+        </a>
       </div>
     </section>
 
@@ -130,17 +106,17 @@
       <div class="footer-section">
         <h3>Quick Links</h3>
         <ul>
-          <li><a href="#">Latest Articles</a></li>
-          <li><a href="#">Recipe Archive</a></li>
+          <li><a href="#articles">Latest Articles</a></li>
+          <li><a href="#recipes">Recipe Archive</a></li>
         </ul>
       </div>
       <div class="footer-section">
         <h3>Categories</h3>
         <ul>
-          <li><a href="#">Traditional Foods</a></li>
-          <li><a href="#">Street Food Culture</a></li>
-          <li><a href="#">Festival Foods</a></li>
-          <li><a href="#">Modern Fusion</a></li>
+          <li><a href="#history">Traditional Foods</a></li>
+          <li><a href="#history">Street Food Culture</a></li>
+          <li><a href="#history">Festival Foods</a></li>
+          <li><a href="#history">Modern Fusion</a></li>
         </ul>
       </div>
       <div class="footer-section">
@@ -159,40 +135,49 @@
   </footer>
 
   <!-- Floating Action Button -->
-  <div class="fab" onclick="openRecommender()">🍽️</div>
+  <div class="fab" aria-label="Open food recommender" onclick="openRecommender()">🍽️</div>
 
-
-    <!-- Recommender Modal -->
-
+  <!-- Recommender Modal -->
   <div class="modal" id="recommenderModal">
-  <div class="modal-content">
-    <span class="modal-close" onclick="closeRecommender()">&times;</span>
-    <h2>Discover Your Next Dish</h2>
-    <p>Tell us what you’re craving and we’ll suggest classics.</p>
+    <div class="modal-content">
+      <span class="modal-close" onclick="closeRecommender()">&times;</span>
+      <h2>Discover Your Next Dish</h2>
+      <p>Tell us what you’re craving and we’ll suggest classics.</p>
 
-    <label style="display:block; margin:1rem 0 0.5rem;">What are you in the mood for?</label>
-    <select id="recoSelect" style="width:100%; padding:0.6rem; margin-bottom:1rem;">
-      <option value="spicy">Spicy dishes</option>
-      <option value="soups">Soups and stews</option>
-      <option value="rice">Rice dishes</option>
-      <option value="street">Street food</option>
-      <option value="veg">Vegetarian options</option>
-      <option value="festive">Festive meals</option>
-    </select>
+      <label style="display:block; margin:1rem 0 0.5rem;">What are you in the mood for?</label>
+      <select id="recoSelect" style="width:100%; padding:0.6rem; margin-bottom:1rem;">
+        <option value="spicy">Spicy dishes</option>
+        <option value="soups">Soups and stews</option>
+        <option value="rice">Rice dishes</option>
+        <option value="street">Street food</option>
+        <option value="veg">Vegetarian options</option>
+        <option value="festive">Festive meals</option>
+      </select>
 
-    <button id="recoBtn" style="background: var(--primary-green); color:white; border:none; padding:0.8rem 1rem; border-radius:6px; width:100%;">Get Recommendations</button>
+      <button id="recoBtn" style="background: var(--primary-green); color:white; border:none; padding:0.8rem 1rem; border-radius:6px; width:100%;">Get Recommendations</button>
 
-    <div id="recoResults" style="margin-top:1rem;"></div>
+      <div id="recoResults" style="margin-top:1rem;"></div>
+    </div>
   </div>
-</div>
 
-
+  <!-- Basic modal controls (keep if not already in app.js) -->
   <script>
-  // set this if your API runs elsewhere
-  window.RECO_API_BASE = 'http://localhost:8000';
-</script>
-<script src="js/app.js" defer></script>
-<script src="recommender.js"></script>
+    function openRecommender() {
+      var m = document.getElementById('recommenderModal');
+      if (m) { m.style.display = 'flex'; }
+    }
+    function closeRecommender() {
+      var m = document.getElementById('recommenderModal');
+      if (m) { m.style.display = 'none'; }
+    }
+    // API base for the recommender client
+    window.RECO_API_BASE = 'http://localhost:8000';
+  </script>
 
+  <!-- Your site scripts -->
+  <script src="js/app.js" defer></script>
+
+  <!-- Recommender client (make sure the filename matches yours) -->
+  <script src="recommender_client.js"></script>
 </body>
 </html>
