@@ -18,6 +18,7 @@
         <li><a href="#recipes">Recipes</a></li>
         <li><a href="#news">News</a></li>
         <li><a href="#about">About</a></li>
+        <li><a href="javascript:void(0)" onclick="openRecommender()">Food Recommender</a></li></li>
       </ul>
       <div class="menu-toggle">☰</div>
     </nav>
@@ -40,6 +41,9 @@
   <!-- Main Content -->
   <div class="container">
     <!-- Featured Articles -->
+
+
+    
     <section class="featured" id="articles">
       <h2 class="section-title">Featured Articles</h2>
       <div class="featured-grid">
@@ -91,7 +95,7 @@
         <div class="category-grid">
           <div class="category-item">
             <div class="category-icon">🏛️</div>
-            <h4>Historical</h4>
+            <h4>History</h4>
           </div>
           <div class="category-item">
             <div class="category-icon">🥘</div>
@@ -128,8 +132,6 @@
         <ul>
           <li><a href="#">Latest Articles</a></li>
           <li><a href="#">Recipe Archive</a></li>
-          <li><a href="#">Historical Timeline</a></li>
-          <li><a href="#">Regional Cuisines</a></li>
         </ul>
       </div>
       <div class="footer-section">
@@ -159,26 +161,31 @@
   <!-- Floating Action Button -->
   <div class="fab" onclick="openRecommender()">🍽️</div>
 
-  <!-- Recipe Recommender Modal -->
+
+    <!-- Recommender Modal -->
+
   <div class="modal" id="recommenderModal">
-    <div class="modal-content">
-      <span class="modal-close" onclick="closeRecommender()">&times;</span>
-      <h2>Discover Your Next Dish</h2>
-      <p>Let us recommend traditional Nigerian recipes based on your preferences!</p>
-      <div style="margin-top: 1.5rem;">
-        <label style="display: block; margin-bottom: 0.5rem;">What are you in the mood for?</label>
-        <select style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
-          <option>Spicy dishes</option>
-          <option>Soups and stews</option>
-          <option>Rice dishes</option>
-          <option>Street food</option>
-          <option>Vegetarian options</option>
-          <option>Festive meals</option>
-        </select>
-        <button style="background: var(--primary-green); color: white; border: none; padding: 0.75rem 2rem; border-radius: 5px; cursor: pointer; width: 100%;">Get Recommendations</button>
-      </div>
-    </div>
+  <div class="modal-content">
+    <span class="modal-close" onclick="closeRecommender()">&times;</span>
+    <h2>Discover Your Next Dish</h2>
+    <p>Tell us what you’re craving and we’ll suggest classics.</p>
+
+    <label style="display:block; margin:1rem 0 0.5rem;">What are you in the mood for?</label>
+    <select id="recoSelect" style="width:100%; padding:0.6rem; margin-bottom:1rem;">
+      <option value="spicy">Spicy dishes</option>
+      <option value="soups">Soups and stews</option>
+      <option value="rice">Rice dishes</option>
+      <option value="street">Street food</option>
+      <option value="veg">Vegetarian options</option>
+      <option value="festive">Festive meals</option>
+    </select>
+
+    <button id="recoBtn" style="background: var(--primary-green); color:white; border:none; padding:0.8rem 1rem; border-radius:6px; width:100%;">Get Recommendations</button>
+
+    <div id="recoResults" style="margin-top:1rem;"></div>
   </div>
+</div>
+
 
   <script src="js/app.js" defer></script>
 </body>
