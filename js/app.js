@@ -16,23 +16,32 @@ menuToggle.addEventListener('click', () => {
 
 // Recipe Recommender Modal
 
-async function fetchAIRecs(kind) {
-  const res = await fetch('/api/recommend', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mood: kind })
-  });
-  const data = await res.json();
-  let items = [];
-  try { items = JSON.parse(data.recommendations); } catch {}
-  const html = items.length
-    ? `<ul style="margin-top:0.5rem; padding-left:1.2rem;">
-         ${items.map(i => `<li><strong>${i.name}</strong> — ${i.why} ${i.source ? `<em>(source: ${i.source})</em>` : ''}</li>`).join('')}
-       </ul>`
-    : `<p>No matches yet—try another mood.</p>`;
-  document.getElementById('recoResults').innerHTML = html;
-}
+<div class="modal" id="recommenderModal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="closeRecommender()">&times;</span>
+    <h2>Discover Your Next Dish</h2>
 
+    <h4 style="margin-top:1rem;">By Ingredients</h4>
+    <p class="caption">e.g., rice, tomato, pepper, onions</p>
+    <input id="reco-ingredients" style="width:100%;padding:0.6rem;margin-bottom:0.5rem;" placeholder="Type ingredients, comma-separated"/>
+    <label>Match threshold (0.5–1.0)</label>
+    <input id="thres-ingredients" type="number" min="0.5" max="1" step="0.05" value="0.7" style="width:100%;margin:0.25rem 0 1rem;"/><br/>
+    <button id="btn-ingredients" style="width:100%;">Find Recipes by Ingredients</button>
+
+    <h4 style="margin-top:1.5rem;">By Food Name</h4>
+    <input id="reco-name" style="width:100%;padding:0.6rem;margin-bottom:0.5rem;" placeholder="Jollof Rice"/>
+    <button id="btn-name" style="width:100%;">Find Recipes by Name</button>
+
+    <h4 style="margin-top:1.5rem;">Talk to Me</h4>
+    <p class="caption">e.g., what can I make with turkey and rice?</p>
+    <input id="reco-prompt" style="width:100%;padding:0.6rem;margin-bottom:0.5rem;"/>
+    <label>Semantic threshold (0.3–0.9)</label>
+    <input id="thres-semantic" type="number" min="0.3" max="0.9" step="0.05" value="0.6" style="width:100%;margin:0.25rem 0 1rem;"/><br/>
+    <button id="btn-prompt" style="width:100%;">Get Suggestions</button>
+
+    <div id="recoResults" style="margin-top:1rem;"></div>
+  </div>
+</div>
 
 // Smooth scrolling for navigation links
 document.querySelectorAll('a[href^="#"]').forEach(anchor => {
