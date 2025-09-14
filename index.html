@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Naija Culinary Heritage - Nigerian Food History</title>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <nav>
+      <div class="logo">Zee Food Archive</div>
+      <ul class="nav-links">
+        <li><a href="#home">Home</a></li>
+        <li><a href="#articles">Articles</a></li>
+        <li><a href="#history">History</a></li>
+        <li><a href="#recipes">Recipes</a></li>
+        <li><a href="#news">News</a></li>
+        <li><a href="#about">About</a></li>
+      </ul>
+      <div class="menu-toggle">☰</div>
+    </nav>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero" id="home">
+    <h1>Discover Nigeria's Rich Food Heritage</h1>
+    <p>Explore centuries of culinary traditions, history of crops, meals and recipes</p>
+  </section>
+
+  <!-- Search -->
+  <div class="search-container">
+    <div class="search-box">
+      <input type="text" placeholder="Search articles, recipes, history...">
+      <button>Search</button>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="container">
+    <!-- Featured Articles -->
+    <section class="featured" id="articles">
+      <h2 class="section-title">Featured Articles</h2>
+      <div class="featured-grid">
+        <article class="article-card">
+          <div class="article-image"></div>
+          <div class="article-content">
+            <span class="article-category">History</span>
+            <h3 class="article-title">The Jollof Wars: A Historical Perspective</h3>
+            <p class="article-excerpt">Tracing the origins of West Africa's most beloved dish through centuries of cultural exchange...</p>
+            <div class="article-meta">
+              <span>5 min read</span>
+              <span>2 days ago</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="article-card">
+          <div class="article-image image-brown"></div>
+          <div class="article-content">
+            <span class="article-category">Traditional</span>
+            <h3 class="article-title">Palm Wine: From Tree to Table</h3>
+            <p class="article-excerpt">The ancient art of palm wine tapping and its role in Nigerian ceremonies and daily life...</p>
+            <div class="article-meta">
+              <span>7 min read</span>
+              <span>1 week ago</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="article-card">
+          <div class="article-image image-green"></div>
+          <div class="article-content">
+            <span class="article-category">Regional</span>
+            <h3 class="article-title">Suya: The Spice Route Connection</h3>
+            <p class="article-excerpt">How trans-Saharan trade routes influenced Northern Nigeria's iconic street food...</p>
+            <div class="article-meta">
+              <span>6 min read</span>
+              <span>2 weeks ago</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Categories -->
+    <section class="categories" id="history">
+      <div class="container">
+        <h2 class="section-title">Explore Categories</h2>
+        <div class="category-grid">
+          <div class="category-item">
+            <div class="category-icon">🏛️</div>
+            <h4>Historical</h4>
+          </div>
+          <div class="category-item">
+            <div class="category-icon">🍚</div>
+            <h4>Traditional</h4>
+          </div>
+          <div class="category-item">
+            <div class="category-icon">🌍</div>
+            <h4>Regional</h4>
+          </div>
+          <div class="category-item">
+            <div class="category-icon">🎉</div>
+            <h4>Festivals</h4>
+          </div>
+          <div class="category-item">
+            <div class="category-icon">🥘</div>
+            <h4>Recipes</h4>
+          </div>
+          <div class="category-item">
+            <div class="category-icon">📰</div>
+            <h4>News</h4>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Newsletter -->
+    <section class="newsletter" id="news">
+      <h2>Stay Connected with Nigerian Food Culture</h2>
+      <p>Get weekly articles, historical insights, and traditional recipes delivered to your inbox</p>
+      <form class="newsletter-form">
+        <input type="email" placeholder="Enter your email">
+        <button type="submit">Subscribe</button>
+      </form>
+    </section>
+  </div>
+
+  <!-- Footer -->
+  <footer id="about">
+    <div class="footer-content">
+      <div class="footer-section">
+        <h3>About</h3>
+        <p>Preserving and celebrating Nigeria's culinary heritage through stories, recipes, and historical insights.</p>
+      </div>
+      <div class="footer-section">
+        <h3>Quick Links</h3>
+        <ul>
+          <li><a href="#">Latest Articles</a></li>
+          <li><a href="#">Recipe Archive</a></li>
+          <li><a href="#">Historical Timeline</a></li>
+          <li><a href="#">Regional Cuisines</a></li>
+        </ul>
+      </div>
+      <div class="footer-section">
+        <h3>Categories</h3>
+        <ul>
+          <li><a href="#">Traditional Foods</a></li>
+          <li><a href="#">Street Food Culture</a></li>
+          <li><a href="#">Festival Foods</a></li>
+          <li><a href="#">Modern Fusion</a></li>
+        </ul>
+      </div>
+      <div class="footer-section">
+        <h3>Connect</h3>
+        <ul>
+          <li><a href="#">Contact Us</a></li>
+          <li><a href="#">Submit Article</a></li>
+          <li><a href="#">Newsletter</a></li>
+          <li><a href="#">Social Media</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; 2024 Naija Culinary Heritage. Preserving our food stories.</p>
+    </div>
+  </footer>
+
+  <!-- Floating Action Button -->
+  <div class="fab" onclick="openRecommender()">🍽️</div>
+
+  <!-- Recipe Recommender Modal -->
+  <div class="modal" id="recommenderModal">
+    <div class="modal-content">
+      <span class="modal-close" onclick="closeRecommender()">&times;</span>
+      <h2>Discover Your Next Dish</h2>
+      <p>Let us recommend traditional Nigerian recipes based on your preferences!</p>
+      <div style="margin-top: 1.5rem;">
+        <label style="display: block; margin-bottom: 0.5rem;">What are you in the mood for?</label>
+        <select style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+          <option>Spicy dishes</option>
+          <option>Soups and stews</option>
+          <option>Rice dishes</option>
+          <option>Street food</option>
+          <option>Vegetarian options</option>
+          <option>Festive meals</option>
+        </select>
+        <button style="background: var(--primary-green); color: white; border: none; padding: 0.75rem 2rem; border-radius: 5px; cursor: pointer; width: 100%;">Get Recommendations</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js" defer></script>
+</body>
+</html>
