@@ -185,32 +185,268 @@ footer { background: var(--dark-text); color: white; padding: 3rem 0 1rem; margi
 .footer-section a:hover { color: var(--accent-gold); }
 .footer-bottom { text-align: center; padding-top: 2rem; border-top: 1px solid #444; color: #999; }
 
-/* Responsive */
-@media (max-width: 768px) {
-  .nav-links { display: none; }
-  .menu-toggle { display: block; }
-  .hero h1 { font-size: 2rem; }
-  .newsletter-form { flex-direction: column; }
-}
-
 /* Floating Action Button */
 .fab {
-  position: fixed; bottom: 2rem; right: 2rem; background: var(--accent-gold); color: white;
-  width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-size: 1.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.2); cursor: pointer; transition: transform 0.3s; z-index: 100;
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 60px;
+  height: 60px;
+  background: var(--accent-gold);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  transition: all 0.3s ease;
+  z-index: 100;
 }
-.fab:hover { transform: scale(1.1); }
 
-/* Recipe Recommender Modal */
+.fab:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+
+/* Food Recommender Modal Styles */
 .modal {
-  display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center;
+  display: none;
+  position: fixed;
+  z-index: 2000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  align-items: center;
+  justify-content: center;
 }
+
 .modal-content {
-  background: white; padding: 2rem; border-radius: 15px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;
+  background-color: #fefefe;
+  padding: 2rem;
+  border-radius: 10px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
 }
-.modal-close { float: right; font-size: 1.5rem; cursor: pointer; color: #999; }
-.modal-close:hover { color: var(--dark-text); }
+
+.modal-close {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #aaa;
+}
+
+.modal-close:hover {
+  color: #000;
+}
+
+.reco-step {
+  margin: 1rem 0;
+}
+
+.reco-grid {
+  display: grid;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.reco-big {
+  padding: 1rem;
+  font-size: 1.1rem;
+  background: var(--primary-green);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.reco-big:hover {
+  background: #155439;
+}
+
+.reco-back {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+
+.reco-back:hover {
+  background: #5a6268;
+}
+
+.chat-window {
+  height: 250px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+  overflow-y: auto;
+  background: #f8f9fa;
+  font-size: 0.9rem;
+}
+
+.chat-row {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.chat-row input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+}
+
+.chat-row button {
+  padding: 0.75rem 1rem;
+  background: var(--primary-green);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.chat-message {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border-radius: 5px;
+}
+
+.chat-user {
+  background: #e3f2fd;
+  text-align: right;
+  margin-left: 2rem;
+}
+
+.chat-bot {
+  background: #f1f8e9;
+  margin-right: 2rem;
+}
+
+.chat-error {
+  background: #ffebee;
+  color: #c62828;
+  margin-right: 2rem;
+}
+
+.chat-sources {
+  background: #fff3e0;
+  font-size: 0.9rem;
+  margin-right: 2rem;
+}
+
+.reco-step input[type="text"], 
+.reco-step input[type="number"] {
+  width: 100%;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  box-sizing: border-box;
+}
+
+.reco-step button:not(.reco-back):not(.reco-big) {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--primary-green);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  margin: 0.5rem 0;
+}
+
+.reco-step button:not(.reco-back):not(.reco-big):hover {
+  background: #155439;
+}
+
+.reco-results {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.reco-result h4 {
+  color: var(--primary-green);
+  margin-bottom: 0.5rem;
+}
+
+.answer-content {
+  line-height: 1.6;
+  margin: 1rem 0;
+  white-space: pre-wrap;
+}
+
+.sources-details {
+  margin-top: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background: white;
+}
+
+.sources-details summary {
+  padding: 0.5rem;
+  background: #f1f1f1;
+  cursor: pointer;
+  border-radius: 5px 5px 0 0;
+}
+
+.sources-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.source-item {
+  padding: 0.75rem;
+  border-bottom: 1px solid #eee;
+}
+
+.source-item:last-child {
+  border-bottom: none;
+}
+
+.source-page {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.source-snippet {
+  margin-top: 0.5rem;
+  color: #555;
+  font-style: italic;
+  background: #f8f9fa;
+  padding: 0.5rem;
+  border-radius: 3px;
+}
+
+.caption {
+  color: #666;
+  font-size: 0.9rem;
+  margin: 0.5rem 0;
+}
+
+.error {
+  color: #d32f2f;
+  background: #ffebee;
+  padding: 0.5rem;
+  border-radius: 5px;
+  margin: 0.5rem 0;
+}
 
 /* Timeline (optional if you add it later) */
 .timeline { position: relative; padding: 2rem 0; margin: 3rem 0; }
@@ -222,3 +458,29 @@ footer { background: var(--dark-text); color: white; padding: 3rem 0 1rem; margi
 .timeline-item:nth-child(odd) .timeline-dot { right: -10px; }
 .timeline-item:nth-child(even) .timeline-dot { left: -10px; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .menu-toggle { display: block; }
+  .hero h1 { font-size: 2rem; }
+  .newsletter-form { flex-direction: column; }
+  
+  .modal-content {
+    width: 95%;
+    padding: 1rem;
+    margin: 1rem;
+  }
+  
+  .chat-window {
+    height: 250px;
+  }
+  
+  .fab {
+    bottom: 1rem;
+    right: 1rem;
+    width: 50px;
+    height: 50px;
+    font-size: 1.2rem;
+  }
+}

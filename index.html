@@ -196,8 +196,15 @@
   </div>
 </div>
 
-<script>window.RECO_API_BASE = '/api/recommend';</script>
-<script src="recommender.js"></script>
+<!-- Configure API endpoint -->
+<script>
+  // IMPORTANT: Replace with your actual server URL
+  window.RECO_API_BASE = 'http://localhost:8000/ask';  // For local testing
+  // window.RECO_API_BASE = 'https://YOUR-APP.onrender.com/ask';  // For production
+</script>
+
+<!-- Include the main app JavaScript -->
+<script src="app.js"></script>
 
 </body>
 </html>
