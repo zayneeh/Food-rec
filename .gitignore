@@ -10,3 +10,4 @@ build/
 *.log
 service_account.json
 *.json
+.__pycache__
