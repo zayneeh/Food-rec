@@ -11,3 +11,4 @@ build/
 service_account.json
 *.json
 .__pycache__
+__pycache__/server.cpython-313.pyc
