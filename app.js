@@ -375,3 +375,48 @@ async function loadArticles() {
   }
 }
 loadArticles();
+
+async function askAPI(question) {
+  console.log('Making API call to:', window.RECO_API_BASE);
+  console.log('Question:', question);
+  
+  if (!window.RECO_API_BASE) {
+    throw new Error('API base URL not configured. Please set window.RECO_API_BASE');
+  }
+  
+  try {
+    const res = await fetch(window.RECO_API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+    
+    console.log('Response status:', res.status);
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error('Error response:', errorText);
+      throw new Error(`API Error: ${res.status} ${res.statusText} - ${errorText}`);
+    }
+    
+    const data = await res.json();
+    console.log('Success response:', data);
+    return data;
+  } catch (error) {
+    console.error('API call failed:', error);
+    throw error;
+  }
+}
+
+async function askAPI(question) {
+  // Check if API is configured
+  if (!window.RECO_API_BASE) {
+    console.warn('API not configured, using mock response');
+    return {
+      answer: "I'm a demo version. Please configure the API endpoint to get real food recommendations!",
+      sources: []
+    };
+  }
+  
+  // Rest of your existing askAPI code...
+}
