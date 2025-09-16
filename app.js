@@ -2,6 +2,10 @@
 const menuToggle = document.querySelector('.menu-toggle');
 const navLinks = document.querySelector('.nav-links');
 
+
+window.RECO_API_BASE = 'https://food-recommender-scq5.onrender.com/ask';
+
+
 menuToggle.addEventListener('click', () => {
   const isOpen = navLinks.style.display === 'flex';
   navLinks.style.display = isOpen ? 'none' : 'flex';
