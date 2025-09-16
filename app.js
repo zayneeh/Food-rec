@@ -1,34 +1,41 @@
-// Menu toggle for mobile
+// ===== CONFIGURATION =====
+// SET YOUR API URL HERE - this is likely the main problem!
+const API_BASE_URL = 'https://your-render-app-url.onrender.com/ask';
+// Replace 'your-render-app-url' with your actual Render deployment URL
+
+// ===== BASIC MENU TOGGLE =====
 const menuToggle = document.querySelector('.menu-toggle');
 const navLinks = document.querySelector('.nav-links');
 
+if (menuToggle && navLinks) {
+  menuToggle.addEventListener('click', () => {
+    const isOpen = navLinks.style.display === 'flex';
+    navLinks.style.display = isOpen ? 'none' : 'flex';
+    navLinks.style.position = 'absolute';
+    navLinks.style.top = '100%';
+    navLinks.style.left = '0';
+    navLinks.style.right = '0';
+    navLinks.style.background = 'var(--primary-green)';
+    navLinks.style.flexDirection = 'column';
+    navLinks.style.padding = '1rem';
+  });
+}
 
-window.RECO_API_BASE = 'https://food-recommender-scq5.onrender.com/ask';
-
-
-menuToggle.addEventListener('click', () => {
-  const isOpen = navLinks.style.display === 'flex';
-  navLinks.style.display = isOpen ? 'none' : 'flex';
-  navLinks.style.position = 'absolute';
-  navLinks.style.top = '100%';
-  navLinks.style.left = '0';
-  navLinks.style.right = '0';
-  navLinks.style.background = 'var(--primary-green)';
-  navLinks.style.flexDirection = 'column';
-  navLinks.style.padding = '1rem';
-});
-
-// ===== FOOD RECOMMENDER MODAL FUNCTIONALITY =====
-
-// Modal control functions
+// ===== MODAL FUNCTIONS =====
 function openRecommender() {
-  document.getElementById('recommenderModal').style.display = 'flex';
-  showStep('reco-step-0');
+  const modal = document.getElementById('recommenderModal');
+  if (modal) {
+    modal.style.display = 'flex';
+    showStep('reco-step-0');
+  }
 }
 
 function closeRecommender() {
-  document.getElementById('recommenderModal').style.display = 'none';
-  clearResults();
+  const modal = document.getElementById('recommenderModal');
+  if (modal) {
+    modal.style.display = 'none';
+    clearResults();
+  }
 }
 
 function showStep(stepId) {
@@ -37,233 +44,314 @@ function showStep(stepId) {
     step.style.display = 'none';
   });
   // Show target step
-  document.getElementById(stepId).style.display = 'block';
+  const targetStep = document.getElementById(stepId);
+  if (targetStep) {
+    targetStep.style.display = 'block';
+  }
 }
 
 function clearResults() {
-  document.getElementById('recoResults').innerHTML = '';
-  document.getElementById('recoResultsName').innerHTML = '';
-  document.getElementById('chatWindow').innerHTML = '';
+  const elements = ['recoResults', 'recoResultsName', 'chatWindow'];
+  elements.forEach(id => {
+    const element = document.getElementById(id);
+    if (element) element.innerHTML = '';
+  });
 }
 
-// API call function
+// ===== SIMPLIFIED API CALL =====
 async function askAPI(question) {
+  console.log('🔍 Making API call...');
+  console.log('📍 URL:', API_BASE_URL);
+  console.log('❓ Question:', question);
+  
+  // Check if URL is configured
+  if (API_BASE_URL.includes('your-render-app-url')) {
+    throw new Error('❌ API URL not configured! Please set your actual Render URL in app.js');
+  }
+  
   try {
-    const res = await fetch(window.RECO_API_BASE, {
+    const response = await fetch(API_BASE_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question })
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ question: question })
     });
     
-    if (!res.ok) {
-      throw new Error(`API Error: ${res.status} ${res.statusText}`);
+    console.log('📡 Response status:', response.status);
+    console.log('📡 Response OK:', response.ok);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Error response:', errorText);
+      throw new Error(`API returned ${response.status}: ${errorText || response.statusText}`);
     }
     
-    return await res.json();
+    const data = await response.json();
+    console.log('✅ Success! Data received:', data);
+    return data;
+    
   } catch (error) {
-    console.error('API call failed:', error);
+    console.error('💥 API Error Details:', error);
+    
+    // More specific error messages
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      throw new Error('❌ Cannot connect to API. Check your internet connection and API URL.');
+    }
+    if (error.message.includes('CORS')) {
+      throw new Error('❌ CORS error. The API server may not allow requests from this domain.');
+    }
+    
     throw error;
   }
 }
 
-// Step navigation event listeners
-document.addEventListener('DOMContentLoaded', () => {
-  // Step 0 -> Choose mode
-  document.getElementById('startChatBtn')?.addEventListener('click', () => {
-    showStep('reco-step-chat');
-  });
-  
-  document.getElementById('startRecoBtn')?.addEventListener('click', () => {
-    showStep('reco-step-1');
-  });
-
-  // Back buttons
-  document.getElementById('backTo0')?.addEventListener('click', () => {
-    showStep('reco-step-0');
-  });
-  
-  document.getElementById('backTo0b')?.addEventListener('click', () => {
-    showStep('reco-step-0');
-  });
-  
-  document.getElementById('backTo1a')?.addEventListener('click', () => {
-    showStep('reco-step-1');
-  });
-  
-  document.getElementById('backTo1b')?.addEventListener('click', () => {
-    showStep('reco-step-1');
-  });
-
-  // Step 1 -> Choose recommendation type
-  document.getElementById('byIngredientsBtn')?.addEventListener('click', () => {
-    showStep('reco-step-ingredients');
-  });
-  
-  document.getElementById('byNameBtn')?.addEventListener('click', () => {
-    showStep('reco-step-name');
-  });
-
-  // Chat functionality
-  document.getElementById('chatSendBtn')?.addEventListener('click', handleChatSend);
-  document.getElementById('chatInput')?.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') handleChatSend();
-  });
-
-  // Ingredients search
-  document.getElementById('btn-ingredients')?.addEventListener('click', handleIngredientsSearch);
-
-  // Name search
-  document.getElementById('btn-name')?.addEventListener('click', handleNameSearch);
-});
-
-// Chat handler
-async function handleChatSend() {
+// ===== CHAT FUNCTIONALITY =====
+function handleChatSend() {
   const input = document.getElementById('chatInput');
   const chatWindow = document.getElementById('chatWindow');
+  
+  if (!input || !chatWindow) {
+    console.error('❌ Chat elements not found');
+    return;
+  }
+  
   const question = input.value.trim();
+  if (!question) {
+    showMessage(chatWindow, 'Please enter a question!', 'error');
+    return;
+  }
   
-  if (!question) return;
-  
-  // Add user message
-  appendChatMessage('user', question);
+  // Show user message
+  showMessage(chatWindow, question, 'user');
   input.value = '';
   
-  // Add loading message
-  const loadingId = Date.now();
-  appendChatMessage('bot', 'Thinking...', loadingId);
+  // Show loading
+  const loadingId = 'loading-' + Date.now();
+  showMessage(chatWindow, '🤔 Thinking...', 'loading', loadingId);
   
-  try {
-    const data = await askAPI(question);
-    
-    // Remove loading message
-    document.getElementById(`msg-${loadingId}`)?.remove();
-    
-    // Add bot response
-    appendChatMessage('bot', data.answer);
-    
-    // Add sources if available
-    if (data.sources && data.sources.length > 0) {
-      const sourcesHtml = renderSources(data.sources);
-      appendChatMessage('sources', sourcesHtml);
-    }
-  } catch (error) {
-    // Remove loading message
-    document.getElementById(`msg-${loadingId}`)?.remove();
-    appendChatMessage('error', `⚠️ ${error.message}`);
-  }
+  // Call API
+  askAPI(question)
+    .then(data => {
+      // Remove loading
+      removeMessage(loadingId);
+      
+      // Show answer
+      if (data.answer) {
+        showMessage(chatWindow, data.answer, 'bot');
+      }
+      
+      // Show sources if available
+      if (data.sources && data.sources.length > 0) {
+        showSources(chatWindow, data.sources);
+      }
+    })
+    .catch(error => {
+      // Remove loading
+      removeMessage(loadingId);
+      
+      // Show error
+      showMessage(chatWindow, error.message, 'error');
+    });
 }
 
-function appendChatMessage(type, content, id) {
-  const chatWindow = document.getElementById('chatWindow');
-  const messageId = id ? `msg-${id}` : '';
-  
-  const messageClass = type === 'user' ? 'chat-user' : 
-                      type === 'error' ? 'chat-error' : 
-                      type === 'sources' ? 'chat-sources' : 'chat-bot';
-  
+// ===== MESSAGE HELPERS =====
+function showMessage(container, content, type, id = null) {
   const messageDiv = document.createElement('div');
-  messageDiv.className = `chat-message ${messageClass}`;
-  if (messageId) messageDiv.id = messageId;
-  messageDiv.innerHTML = content;
+  messageDiv.className = `chat-message chat-${type}`;
+  if (id) messageDiv.id = id;
   
-  chatWindow.appendChild(messageDiv);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
+  // Simple HTML escaping for security
+  const safeContent = content.replace(/[<>&"']/g, (c) => ({
+    '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+  
+  messageDiv.innerHTML = safeContent;
+  container.appendChild(messageDiv);
+  container.scrollTop = container.scrollHeight;
 }
 
-// Ingredients search handler
-async function handleIngredientsSearch() {
-  const ingredients = document.getElementById('reco-ingredients').value.trim();
-  const threshold = document.getElementById('thres-ingredients').value;
+function removeMessage(id) {
+  const element = document.getElementById(id);
+  if (element) element.remove();
+}
+
+function showSources(container, sources) {
+  const sourcesDiv = document.createElement('div');
+  sourcesDiv.className = 'chat-message chat-sources';
+  
+  let sourcesHtml = '<details><summary>📚 Sources (' + sources.length + ')</summary><ul>';
+  sources.forEach(source => {
+    const safeSource = (source.source || 'Unknown').replace(/[<>&"']/g, (c) => ({
+      '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;'
+    })[c]);
+    const safeSnippet = (source.snippet || '').replace(/[<>&"']/g, (c) => ({
+      '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;'
+    })[c]);
+    
+    sourcesHtml += '<li><strong>' + safeSource + '</strong>';
+    if (source.page != null) sourcesHtml += ' (row ' + source.page + ')';
+    sourcesHtml += '<br><small>' + safeSnippet + '</small></li>';
+  });
+  sourcesHtml += '</ul></details>';
+  
+  sourcesDiv.innerHTML = sourcesHtml;
+  container.appendChild(sourcesDiv);
+  container.scrollTop = container.scrollHeight;
+}
+
+// ===== INGREDIENTS SEARCH =====
+function handleIngredientsSearch() {
+  const ingredientsInput = document.getElementById('reco-ingredients');
   const resultsDiv = document.getElementById('recoResults');
   
-  if (!ingredients) {
-    resultsDiv.innerHTML = '<p class="error">Please enter some ingredients.</p>';
+  if (!ingredientsInput || !resultsDiv) {
+    console.error('❌ Ingredients search elements not found');
     return;
   }
   
-  resultsDiv.innerHTML = '<p>Searching for recipes...</p>';
-  
-  const question = `What Nigerian dishes can I make with these ingredients: ${ingredients}? Please suggest recipes that use most of these ingredients.`;
-  
-  try {
-    const data = await askAPI(question);
-    displayResults(resultsDiv, data, `Results for ingredients: ${ingredients}`);
-  } catch (error) {
-    resultsDiv.innerHTML = `<p class="error">⚠️ ${error.message}</p>`;
+  const ingredients = ingredientsInput.value.trim();
+  if (!ingredients) {
+    resultsDiv.innerHTML = '<p class="error">⚠️ Please enter some ingredients.</p>';
+    return;
   }
+  
+  resultsDiv.innerHTML = '<p>🔍 Searching for recipes...</p>';
+  
+  const question = `What Nigerian dishes can I make with these ingredients: ${ingredients}? Please suggest recipes that use most of these ingredients and include cooking instructions.`;
+  
+  askAPI(question)
+    .then(data => {
+      showResults(resultsDiv, data, `Results for: ${ingredients}`);
+    })
+    .catch(error => {
+      resultsDiv.innerHTML = `<p class="error">❌ ${error.message}</p>`;
+    });
 }
 
-// Name search handler
-async function handleNameSearch() {
-  const dishName = document.getElementById('reco-name').value.trim();
+// ===== NAME SEARCH =====
+function handleNameSearch() {
+  const nameInput = document.getElementById('reco-name');
   const resultsDiv = document.getElementById('recoResultsName');
   
-  if (!dishName) {
-    resultsDiv.innerHTML = '<p class="error">Please enter a dish name.</p>';
+  if (!nameInput || !resultsDiv) {
+    console.error('❌ Name search elements not found');
     return;
   }
   
-  resultsDiv.innerHTML = '<p>Searching for recipe...</p>';
-  
-  const question = `Tell me about ${dishName}. How do I make it? What are the ingredients and cooking instructions?`;
-  
-  try {
-    const data = await askAPI(question);
-    displayResults(resultsDiv, data, `Recipe for: ${dishName}`);
-  } catch (error) {
-    resultsDiv.innerHTML = `<p class="error">⚠️ ${error.message}</p>`;
+  const dishName = nameInput.value.trim();
+  if (!dishName) {
+    resultsDiv.innerHTML = '<p class="error">⚠️ Please enter a dish name.</p>';
+    return;
   }
-}
-
-// Display results helper
-function displayResults(container, data, title) {
-  const sourcesHtml = renderSources(data.sources);
   
-  container.innerHTML = `
-    <div class="reco-result">
-      <h4>${title}</h4>
-      <div class="answer-content">${escapeHtml(data.answer)}</div>
-      ${sourcesHtml}
-    </div>
-  `;
-}
-
-// Render sources helper
-function renderSources(sources = []) {
-  if (!sources.length) return '';
+  resultsDiv.innerHTML = '<p>🔍 Searching for recipe...</p>';
   
-  return `
-    <details class="sources-details">
-      <summary>Sources (${sources.length})</summary>
-      <ul class="sources-list">
-        ${sources.map(s => `
-          <li class="source-item">
-            <strong>${escapeHtml(s.source)}</strong>
-            ${s.page != null ? `<span class="source-page">(row ${s.page})</span>` : ''}
-            <div class="source-snippet">${escapeHtml(s.snippet)}</div>
-          </li>
-        `).join('')}
-      </ul>
-    </details>
-  `;
+  const question = `Tell me about ${dishName}. How do I make it? What are the ingredients and complete cooking instructions?`;
+  
+  askAPI(question)
+    .then(data => {
+      showResults(resultsDiv, data, `Recipe for: ${dishName}`);
+    })
+    .catch(error => {
+      resultsDiv.innerHTML = `<p class="error">❌ ${error.message}</p>`;
+    });
 }
 
-// HTML escape utility
-function escapeHtml(text) {
-  if (!text) return '';
-  return text.replace(/[&<>"']/g, (match) => {
-    const escapeMap = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
-    };
-    return escapeMap[match];
+// ===== RESULTS DISPLAY =====
+function showResults(container, data, title) {
+  let html = `<div class="reco-result">
+    <h4>${title}</h4>
+    <div class="answer-content">${data.answer || 'No answer received'}</div>`;
+  
+  if (data.sources && data.sources.length > 0) {
+    html += '<details class="sources-details"><summary>📚 Sources (' + data.sources.length + ')</summary><ul>';
+    data.sources.forEach(source => {
+      html += '<li><strong>' + (source.source || 'Unknown') + '</strong>';
+      if (source.page != null) html += ' (row ' + source.page + ')';
+      html += '<br><small>' + (source.snippet || '') + '</small></li>';
+    });
+    html += '</ul></details>';
+  }
+  
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ===== EVENT LISTENERS =====
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('🚀 App initializing...');
+  console.log('🔗 API URL configured:', API_BASE_URL);
+  
+  // Modal controls
+  const startChatBtn = document.getElementById('startChatBtn');
+  const startRecoBtn = document.getElementById('startRecoBtn');
+  const chatSendBtn = document.getElementById('chatSendBtn');
+  const chatInput = document.getElementById('chatInput');
+  const ingredientsBtn = document.getElementById('btn-ingredients');
+  const nameBtn = document.getElementById('btn-name');
+  
+  // Back buttons
+  const backButtons = [
+    { id: 'backTo0', step: 'reco-step-0' },
+    { id: 'backTo0b', step: 'reco-step-0' },
+    { id: 'backTo1a', step: 'reco-step-1' },
+    { id: 'backTo1b', step: 'reco-step-1' }
+  ];
+  
+  // Step navigation buttons
+  const stepButtons = [
+    { id: 'byIngredientsBtn', step: 'reco-step-ingredients' },
+    { id: 'byNameBtn', step: 'reco-step-name' }
+  ];
+  
+  // Add event listeners with error checking
+  if (startChatBtn) {
+    startChatBtn.addEventListener('click', () => showStep('reco-step-chat'));
+  }
+  
+  if (startRecoBtn) {
+    startRecoBtn.addEventListener('click', () => showStep('reco-step-1'));
+  }
+  
+  if (chatSendBtn) {
+    chatSendBtn.addEventListener('click', handleChatSend);
+  }
+  
+  if (chatInput) {
+    chatInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') handleChatSend();
+    });
+  }
+  
+  if (ingredientsBtn) {
+    ingredientsBtn.addEventListener('click', handleIngredientsSearch);
+  }
+  
+  if (nameBtn) {
+    nameBtn.addEventListener('click', handleNameSearch);
+  }
+  
+  // Back buttons
+  backButtons.forEach(btn => {
+    const element = document.getElementById(btn.id);
+    if (element) {
+      element.addEventListener('click', () => showStep(btn.step));
+    }
   });
-}
+  
+  // Step buttons
+  stepButtons.forEach(btn => {
+    const element = document.getElementById(btn.id);
+    if (element) {
+      element.addEventListener('click', () => showStep(btn.step));
+    }
+  });
+  
+  console.log('✅ Event listeners attached');
+});
 
-// Close modal when clicking outside
+// ===== MODAL CLOSE ON OUTSIDE CLICK =====
 window.addEventListener('click', (e) => {
   const modal = document.getElementById('recommenderModal');
   if (e.target === modal) {
@@ -271,9 +359,8 @@ window.addEventListener('click', (e) => {
   }
 });
 
-// ===== OTHER WEBSITE FUNCTIONALITY =====
-
-// Smooth scrolling for navigation links
+// ===== OTHER FEATURES (simplified) =====
+// Smooth scrolling
 document.querySelectorAll('a[href^="#"]').forEach(anchor => {
   anchor.addEventListener('click', function (e) {
     e.preventDefault();
@@ -284,29 +371,7 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
   });
 });
 
-// Article cards click handler
-document.querySelectorAll('.article-card').forEach(card => {
-  card.addEventListener('click', () => {
-    // Placeholder: navigate to article page in real implementation
-    console.log('Article clicked');
-  });
-});
-
-// Animate items on scroll
-const observerOptions = { threshold: 0.1, rootMargin: '0px 0px -50px 0px' };
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      entry.target.style.animation = 'fadeInUp 0.6s ease both';
-    }
-  });
-}, observerOptions);
-
-document.querySelectorAll('.category-item, .article-card').forEach(item => {
-  observer.observe(item);
-});
-
-// Newsletter form handler
+// Newsletter form
 const form = document.querySelector('.newsletter-form');
 if (form) {
   form.addEventListener('submit', (e) => {
@@ -316,107 +381,4 @@ if (form) {
   });
 }
 
-// Search functionality
-const searchBtn = document.querySelector('.search-box button');
-if (searchBtn) {
-  searchBtn.addEventListener('click', () => {
-    const searchTerm = document.querySelector('.search-box input').value;
-    if (searchTerm) {
-      alert(`Searching for: ${searchTerm}`);
-      // TODO: hook up real search logic or navigate to results page
-    }
-  });
-}
-
-// ---- Dynamic Articles ----
-async function loadArticles() {
-  try {
-    const res = await fetch('data/articles.json');
-    const articles = await res.json();
-
-    const grid = document.querySelector('.featured-grid');
-    if (!grid) return;
-
-    grid.innerHTML = articles.map(a => {
-      const imageClass =
-        a.imageVariant === 'green' ? 'article-image image-green' :
-        a.imageVariant === 'brown' ? 'article-image image-brown' :
-        'article-image';
-
-      const date = new Date(a.publishedAt).toLocaleString('en-NG', {
-        year: 'numeric', month: 'short', day: 'numeric'
-      });
-
-      return `
-        <article class="article-card" data-url="${a.url}">
-          <div class="${imageClass}"></div>
-          <div class="article-content">
-            <span class="article-category">${a.category}</span>
-            <h3 class="article-title">${a.title}</h3>
-            <p class="article-excerpt">${a.excerpt}</p>
-            <div class="article-meta">
-              <span>${a.readMins} min read</span>
-              <span>${date}</span>
-            </div>
-          </div>
-        </article>
-      `;
-    }).join('');
-
-    // Click-through to article pages
-    grid.querySelectorAll('.article-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const url = card.getAttribute('data-url');
-        if (url) location.href = url;
-      });
-    });
-  } catch (e) {
-    console.error('Failed to load articles', e);
-  }
-}
-loadArticles();
-
-async function askAPI(question) {
-  console.log('Making API call to:', window.RECO_API_BASE);
-  console.log('Question:', question);
-  
-  if (!window.RECO_API_BASE) {
-    throw new Error('API base URL not configured. Please set window.RECO_API_BASE');
-  }
-  
-  try {
-    const res = await fetch(window.RECO_API_BASE, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question })
-    });
-    
-    console.log('Response status:', res.status);
-    
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error('Error response:', errorText);
-      throw new Error(`API Error: ${res.status} ${res.statusText} - ${errorText}`);
-    }
-    
-    const data = await res.json();
-    console.log('Success response:', data);
-    return data;
-  } catch (error) {
-    console.error('API call failed:', error);
-    throw error;
-  }
-}
-
-async function askAPI(question) {
-  // Check if API is configured
-  if (!window.RECO_API_BASE) {
-    console.warn('API not configured, using mock response');
-    return {
-      answer: "I'm a demo version. Please configure the API endpoint to get real food recommendations!",
-      sources: []
-    };
-  }
-  
-  // Rest of your existing askAPI code...
-}
+console.log('📱 App.js loaded successfully!');
