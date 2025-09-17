@@ -1,42 +1,52 @@
 import os
 from traceback import format_exc
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.requests import Request
 
-from langchain_community.chat_models import ChatOllama
-from langchain_community.embeddings import OllamaEmbeddings, HuggingFaceEmbeddings
+# LLM: Hugging Face hosted open-source models
+from langchain_huggingface import HuggingFaceEndpoint
+# Embeddings & Chroma
+from langchain_community.embeddings import HuggingFaceEmbeddings, OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain.chains import RetrievalQA
 
 # ──────────────────────────────────────────
-# Config
+# Config (env-driven)
 # ──────────────────────────────────────────
-CHROMA_DIR         = os.environ.get("CHROMA_DIR", "chroma_db")
-OLLAMA_BASE_URL    = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL       = os.environ.get("OLLAMA_MODEL", "llama3.1:8b-instruct")
-OLLAMA_TEMPERATURE = float(os.environ.get("OLLAMA_TEMPERATURE", "0.2"))
+CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")  # keep in repo on Render free
+EMBED_BACKEND = os.environ.get("EMBED_BACKEND", "hf")   # "hf" or "ollama" (embeddings only)
 
-EMBED_BACKEND      = os.environ.get("EMBED_BACKEND", "hf")  # "hf" or "ollama"
+# HF Inference API (open-source models)
+HF_TOKEN   = os.environ.get("HF_TOKEN", "")  # required
+HF_MODEL   = os.environ.get("HF_MODEL", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")  # pick any OSS chat model
+HF_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.2"))
+HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "512"))
+
+# Embedding models
+HF_EMBED_MODEL = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-HF_EMBED_MODEL     = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+
+# Retrieval guardrail
+RELEVANCE_THRESHOLD = float(os.environ.get("RELEVANCE_THRESHOLD", "0.35"))
+NOT_FOUND_TEXT = "This item is not in our database."
 
 app = FastAPI(title="Nigerian Food Recommender API")
 
-# ──────────  ✅  CORS (from working server) ──────────
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          
-    allow_credentials=False,      
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
 
-# Log every request (helps debug CORS / preflight)
+# Logs
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     resp = await call_next(request)
@@ -44,170 +54,139 @@ async def log_requests(request: Request, call_next):
     return resp
 
 # ──────────────────────────────────────────
-# LLM + Retrieval Setup
+# LLM + Vector Store
 # ──────────────────────────────────────────
-qa_chain = None
-
 def build_llm():
     try:
-        print(f"Initializing LLM with model: {OLLAMA_MODEL} at {OLLAMA_BASE_URL}")
-        llm = ChatOllama(
-            model=OLLAMA_MODEL,
-            base_url=OLLAMA_BASE_URL,
-            temperature=OLLAMA_TEMPERATURE,
+        if not HF_TOKEN:
+            raise RuntimeError("HF_TOKEN is missing; set it in Render env.")
+        llm = HuggingFaceEndpoint(
+            repo_id=HF_MODEL,              # open-source model id
+            task="text-generation",        # works for chat-style prompts too
+            temperature=HF_TEMPERATURE,
+            max_new_tokens=HF_MAX_NEW_TOKENS,
+            huggingface_api_key=HF_TOKEN,
+            stop_sequences=None,
         )
-        # Test the connection
-        test_response = llm.invoke("Hello")
-        print(f"LLM test successful: {test_response}")
+        # quick ping
+        _ = llm.invoke("ping")
+        print(f"LLM ready: {HF_MODEL}")
         return llm
     except Exception as e:
         print(f"LLM init failed: {e}\n{format_exc()}")
         return None
 
-def chroma_present(path: str) -> bool:
-    if not os.path.isdir(path):
-        print(f"Chroma directory not found: {path}")
-        return False
-    files = set(os.listdir(path))
-    has_files = bool(files)
-    print(f"Chroma directory check - Path: {path}, Has files: {has_files}, Files: {list(files)[:5]}")
-    return has_files
-
 def build_embeddings():
     try:
-        print(f"Building embeddings with backend: {EMBED_BACKEND}")
         if EMBED_BACKEND.lower() == "ollama":
-            emb = OllamaEmbeddings(model=OLLAMA_EMBED_MODEL, base_url=OLLAMA_BASE_URL)
-        else:
-            emb = HuggingFaceEmbeddings(model_name=HF_EMBED_MODEL)
-        print("Embeddings initialized successfully")
-        return emb
+            # only if you run an external Ollama for embeddings
+            return OllamaEmbeddings(model=OLLAMA_EMBED_MODEL, base_url=OLLAMA_BASE_URL)
+        return HuggingFaceEmbeddings(model_name=HF_EMBED_MODEL)
     except Exception as e:
         print(f"Embeddings init failed: {e}\n{format_exc()}")
         return None
 
-def get_chain():
-    global qa_chain
-    if qa_chain:
-        print("Using cached QA chain")
-        return qa_chain
-    
-    print("Building new QA chain...")
+def chroma_present(path: str) -> bool:
+    return os.path.isdir(path) and any(os.scandir(path))
+
+LLM = build_llm()
+EMB = build_embeddings()
+VDB = None
+if EMB and chroma_present(CHROMA_DIR):
     try:
-        # Check LLM first
-        if not LLM:
-            print("LLM not available, cannot build chain")
-            return None
-            
-        # Check if Chroma exists
-        if not chroma_present(CHROMA_DIR):
-            print("Chroma database not present, cannot build retrieval chain")
-            return None
-            
-        # Build embeddings
-        emb = build_embeddings()
-        if not emb:
-            print("Embeddings not available, cannot build chain")
-            return None
-            
-        print("Loading Chroma vector database...")
-        vectordb = Chroma(
+        VDB = Chroma(
             collection_name="knowledge_base",
-            embedding_function=emb,
+            embedding_function=EMB,
             persist_directory=CHROMA_DIR,
         )
-        
-        # Test if vectordb has documents
-        try:
-            test_docs = vectordb.similarity_search("test", k=1)
-            print(f"Vector database loaded, found {len(test_docs)} test documents")
-        except Exception as e:
-            print(f"Warning: Could not test vector database: {e}")
-        
-        print("Building RetrievalQA chain...")
-        qa_chain = RetrievalQA.from_chain_type(
-            llm=LLM,
-            chain_type="stuff",
-            retriever=vectordb.as_retriever(search_kwargs={"k": 4}),
-            return_source_documents=True,
-        )
-        print("QA chain built successfully!")
-        return qa_chain
-        
+        print("Chroma loaded.")
     except Exception as e:
-        print(f"Retrieval init failed: {e}\n{format_exc()}")
-        return None
+        print(f"Chroma load failed: {e}\n{format_exc()}")
 
-def get_mock_response(question: str) -> Dict[str, Any]:
-    q = question.lower()
-    if "jollof" in q:
-        return {"result": "Jollof Rice is Nigeria's most famous dish—tomato-pepper base with onions and spices.", "source_documents": []}
-    if "egusi" in q:
-        return {"result": "Egusi soup uses ground melon seeds, palm oil, peppers and greens; great with pounded yam.", "source_documents": []}
-    return {"result": "I can help with Nigerian recipes! Ask about Jollof, Egusi, Efo Riro, or share ingredients.", "source_documents": []}
+# ──────────────────────────────────────────
+# Retrieval helpers (strict, no fabrication)
+# ──────────────────────────────────────────
+def format_sources(docs) -> List[Dict[str, Any]]:
+    out = []
+    for d in docs:
+        meta = getattr(d, "metadata", {}) or {}
+        txt = getattr(d, "page_content", "")
+        out.append({
+            "source": meta.get("source", ""),
+            "page": meta.get("row"),
+            "snippet": (txt[:240] + "...") if len(txt) > 240 else txt,
+        })
+    return out
 
-def llm_only_answer(question: str) -> str:
-    if not LLM:
-        print("LLM not available for direct answer")
-        return get_mock_response(question)["result"]
-    
+def build_prompt(context: str, question: str) -> str:
+    return (
+        "You are a precise Nigerian food assistant.\n"
+        "Use ONLY the context below to answer. Do not invent recipes or facts.\n"
+        f"If the answer isn't fully supported by the context, reply exactly: {NOT_FOUND_TEXT}\n\n"
+        "=== CONTEXT START ===\n"
+        f"{context}\n"
+        "=== CONTEXT END ===\n\n"
+        f"Question: {question}\n"
+        "Answer:"
+    )
+
+def retrieve_with_scores(query: str, k: int = 4) -> List[Tuple[Any, float]]:
+    if not VDB:
+        return []
     try:
-        print(f"Getting LLM-only answer for: {question}")
-        prompt = (
-            "You are a friendly Nigerian food assistant. Be concise and practical. "
-            "Answer questions about Nigerian cuisine, recipes, ingredients, and cooking methods.\n\n"
-            f"Question: {question}\n"
-            f"Answer:"
-        )
-        msg = LLM.invoke(prompt)
-        
-        # Handle different response types
-        if hasattr(msg, 'content'):
-            answer = msg.content
-        elif isinstance(msg, str):
-            answer = msg
-        else:
-            answer = str(msg)
-            
-        if not answer or answer.strip() == "":
-            print("Empty LLM response, using fallback")
-            answer = get_mock_response(question)["result"]
-            
-        print(f"LLM answer: {answer[:100]}...")
-        return answer
-        
+        # preferred: relevance in [0..1]
+        return VDB.similarity_search_with_relevance_scores(query, k=k)
+    except Exception:
+        try:
+            docs_dist = VDB.similarity_search_with_score(query, k=k)
+            return [(doc, max(0.0, 1.0 - float(dist))) for doc, dist in docs_dist]
+        except Exception as e:
+            print(f"Retrieval error: {e}\n{format_exc()}")
+            return []
+
+def answer_from_context(question: str) -> Dict[str, Any]:
+    if not (LLM and VDB):
+        return {"answer": NOT_FOUND_TEXT, "sources": []}
+
+    pairs = retrieve_with_scores(question, k=4)
+    kept = [(d, s) for (d, s) in pairs if s is not None and s >= RELEVANCE_THRESHOLD]
+    if not kept:
+        return {"answer": NOT_FOUND_TEXT, "sources": []}
+
+    docs = [d for d, _ in kept]
+    context = "\n\n---\n\n".join(d.page_content for d in docs)
+    prompt = build_prompt(context, question)
+
+    try:
+        content = LLM.invoke(prompt) or ""
+        if not content.strip() or NOT_FOUND_TEXT.lower() in content.lower():
+            return {"answer": NOT_FOUND_TEXT, "sources": format_sources(docs)}
+        return {"answer": content.strip(), "sources": format_sources(docs)}
     except Exception as e:
-        print(f"[llm_only] Error: {e}\n{format_exc()}")
-        return get_mock_response(question)["result"]
+        print(f"LLM invoke error: {e}\n{format_exc()}")
+        return {"answer": NOT_FOUND_TEXT, "sources": format_sources(docs)}
 
-# Initialize LLM at startup
-print("=== Initializing API ===")
-LLM = build_llm()
-
+# ──────────────────────────────────────────
+# API
+# ──────────────────────────────────────────
 class AskRequest(BaseModel):
     question: str
 
-# ──────────────────────────────────────────
-# Routes
-# ──────────────────────────────────────────
 @app.get("/")
 async def root():
     return {"message": "Nigerian Food Recommender API is running!"}
 
 @app.get("/health")
 async def health_check():
-    chain_available = get_chain() is not None
     return {
         "status": "ok",
         "chroma_present": chroma_present(CHROMA_DIR),
         "llm_initialized": bool(LLM),
-        "chain_available": chain_available,
         "embed_backend": EMBED_BACKEND,
-        "ollama_model": OLLAMA_MODEL,
-        "ollama_base_url": OLLAMA_BASE_URL,
+        "hf_model": HF_MODEL,
+        "relevance_threshold": RELEVANCE_THRESHOLD,
     }
 
-# ✅ Explicit OPTIONS route for preflight
 @app.options("/ask")
 async def ask_options():
     return {"message": "CORS preflight OK"}
@@ -218,48 +197,8 @@ async def ask_get_hint():
 
 @app.post("/ask")
 async def ask(request: AskRequest) -> Dict[str, Any]:
-    print(f"\n=== Processing question: {request.question} ===")
-    
     try:
-        # Try to get the retrieval chain first
-        chain = get_chain()
-        
-        if chain:
-            print("Using retrieval chain")
-            try:
-                out = chain.invoke({"query": request.question})
-                print(f"Chain output type: {type(out)}")
-                print(f"Chain output keys: {out.keys() if isinstance(out, dict) else 'Not a dict'}")
-                
-                # Extract answer from chain output
-                answer = out.get("result") or out.get("answer") or ""
-                
-                # Process sources
-                sources = []
-                source_docs = out.get("source_documents") or []
-                for doc in source_docs:
-                    sources.append({
-                        "source": doc.metadata.get("source", "unknown"),
-                        "page": doc.metadata.get("row"),
-                        "snippet": (doc.page_content[:240] + "...") if len(doc.page_content) > 240 else doc.page_content,
-                    })
-                
-                if answer and answer.strip():
-                    print(f"Retrieval answer: {answer[:100]}...")
-                    return {"answer": answer, "sources": sources}
-                else:
-                    print("Empty retrieval answer, falling back to LLM-only")
-                    
-            except Exception as e:
-                print(f"Error in retrieval chain: {e}\n{format_exc()}")
-        else:
-            print("No retrieval chain available, using LLM-only")
-        
-        # Fallback to LLM-only
-        llm_answer = llm_only_answer(request.question)
-        return {"answer": llm_answer, "sources": []}
-        
+        return answer_from_context(request.question)
     except Exception as e:
         print(f"[/ask] Critical error: {e}\n{format_exc()}")
-        fallback = get_mock_response(request.question)
-        return {"answer": fallback["result"], "sources": []}
+        return {"answer": NOT_FOUND_TEXT, "sources": []}
