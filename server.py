@@ -66,15 +66,38 @@ qa_chain = None
 
 def build_llm():
     try:
-        return ChatVertexAI(
-            model="gemini-1.5-flash",
-            project=PROJECT_ID,
-            location=LOCATION,
-            temperature=0.2,
-            credentials=credentials,  # Pass credentials explicitly
-        )
+        # Try different regions and models
+        regions_to_try = ["us-central1", "us-east1", "us-west1", "europe-west1"]
+        models_to_try = [
+            "gemini-1.5-flash-001",
+            "gemini-1.0-pro-001", 
+            "gemini-1.0-pro",
+            "chat-bison-001",
+        ]
+        
+        for region in regions_to_try:
+            for model_name in models_to_try:
+                try:
+                    print(f"Trying model: {model_name} in region: {region}")
+                    llm = ChatVertexAI(
+                        model=model_name,
+                        project=PROJECT_ID,
+                        location=region,
+                        temperature=0.2,
+                        credentials=credentials,
+                    )
+                    # Test with a simple message
+                    test_response = llm.invoke("Hello")
+                    print(f"✓ Successfully initialized {model_name} in {region}")
+                    return llm
+                except Exception as e:
+                    print(f"✗ {model_name} in {region} failed: {str(e)[:100]}...")
+                    continue
+        
+        print("All model/region combinations failed")
+        return None
     except Exception as e:
-        print(f"LLM init failed: {e}\n{format_exc()}")
+        print(f"LLM init failed completely: {e}")
         return None
 
 LLM = build_llm()
@@ -103,12 +126,32 @@ def get_chain():
             return None
 
         try:
-            emb = VertexAIEmbeddings(
-                project=PROJECT_ID,
-                location=LOCATION,
-                model_name="text-embedding-004",
-                credentials=credentials,  # Pass credentials explicitly
-            )
+            # Try different embedding models
+            embedding_models = [
+                "text-embedding-004",
+                "textembedding-gecko@003",
+                "textembedding-gecko@001",
+            ]
+            
+            for emb_model in embedding_models:
+                try:
+                    print(f"Trying embedding model: {emb_model}")
+                    emb = VertexAIEmbeddings(
+                        project=PROJECT_ID,
+                        location=LOCATION,
+                        model_name=emb_model,
+                        credentials=credentials,
+                    )
+                    print(f"Successfully initialized embedding model: {emb_model}")
+                    break
+                except Exception as e:
+                    print(f"Embedding model {emb_model} failed: {e}")
+                    continue
+            else:
+                raise Exception("All embedding models failed")
+        except Exception as e:
+            print(f"Embeddings init failed: {e}\n{format_exc()}")
+            return None
         except Exception as e:
             print(f"Embeddings init failed: {e}\n{format_exc()}")
             return None
@@ -135,11 +178,17 @@ def get_chain():
 # ────────────────────────────────────────────────────────────────────────────────
 def get_mock_response(question: str) -> Dict[str, Any]:
     q = question.lower()
-    if "jollof" in q:
-        return {"result": "Jollof Rice is Nigeria's most famous dish—tomato-pepper base with onions and spices.", "source_documents": []}
+    if "jollof" in q or "rice" in q:
+        return {"result": "Jollof Rice is Nigeria's most famous dish—made with tomato-pepper base, onions, spices, and rice. Cook rice with tomato sauce, peppers, onions, and stock until fluffy and flavorful.", "source_documents": []}
     if "egusi" in q:
-        return {"result": "Egusi soup uses ground melon seeds, palm oil, peppers and greens; great with pounded yam.", "source_documents": []}
-    return {"result": "I can help with Nigerian recipes! Ask about Jollof, Egusi, Efo Riro, or share ingredients.", "source_documents": []}
+        return {"result": "Egusi soup uses ground melon seeds, palm oil, peppers and leafy greens like spinach or bitter leaf. Great with pounded yam, eba, or rice.", "source_documents": []}
+    if "pepper soup" in q:
+        return {"result": "Nigerian pepper soup is a spicy broth made with meat/fish, pepper soup spice blend, scotch bonnet, ginger, and garlic. Perfect for cold days.", "source_documents": []}
+    if "suya" in q:
+        return {"result": "Suya is grilled spiced meat (usually beef) coated in groundnut-based spice mix called yaji, served with onions and tomatoes.", "source_documents": []}
+    if any(word in q for word in ["ingredient", "cook", "recipe", "make", "how"]):
+        return {"result": "I can help with Nigerian recipes! Popular dishes include Jollof Rice, Egusi soup, Pepper soup, Suya, Efo Riro, Amala, Pounded Yam, and many more. What would you like to cook?", "source_documents": []}
+    return {"result": "I specialize in Nigerian cuisine! Ask me about popular dishes like Jollof Rice, Egusi, Pepper Soup, Suya, or share ingredients you have and I'll suggest recipes.", "source_documents": []}
 
 def llm_only_answer(question: str) -> str:
     if not LLM:
@@ -167,14 +216,24 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    llm_status = "not_initialized"
+    if LLM:
+        llm_status = "initialized"
+        
     return {
         "status": "ok",
         "project": PROJECT_ID,
         "location": LOCATION,
         "chroma_present": chroma_present(CHROMA_DIR),
-        "allowed_origins": ["*"],  # Show wildcard since we're using it
+        "allowed_origins": ["*"],  
         "google_creds_set": bool(credentials),
-        "llm_initialized": bool(LLM),
+        "credentials_type": type(credentials).__name__ if credentials else "None",
+        "llm_status": llm_status,
+        "apis_to_enable": [
+            "Vertex AI API",
+            "AI Platform API", 
+            "Cloud Resource Manager API"
+        ]
     }
 
 # Add explicit OPTIONS handler for debugging
