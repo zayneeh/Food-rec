@@ -7,4 +7,9 @@ pandas
 fastapi
 uvicorn
 google-cloud-aiplatform
-python-dotenv
+python-dotenv 
+transformers
+torch
+sentence-transformers
+accelerate
+safetensors
