@@ -49,7 +49,7 @@ CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
 # Comma-separated origins (edit in your Render env if needed)
 ALLOWED_ORIGINS_ENV = os.environ.get(
     "ALLOWED_ORIGINS",
-    "https://zeesfoodarchive.netlify.app,http://localhost:5173,http://localhost:3000",
+    "https://zeesfoodarchivee.netlify.app,http://localhost:5173,http://localhost:3000",
 )
 ALLOWED_ORIGINS: List[str] = [o.strip() for o in ALLOWED_ORIGINS_ENV.split(",") if o.strip()]
 
