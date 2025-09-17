@@ -1,35 +1,43 @@
 import os
 from traceback import format_exc
 from typing import Dict, Any, List, Tuple
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.requests import Request
+
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
 
-CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")  
-# HF Inference API 
-HF_TOKEN = os.environ.get("HF_TOKEN", "")  
+# ──────────────────────────────────────────
+# Config (env)
+# ──────────────────────────────────────────
+CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
+
+HF_TOKEN = os.environ.get("HF_TOKEN", "")  # REQUIRED
 HF_MODEL = os.environ.get("HF_MODEL", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")
 HF_EMBED_MODEL = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 HF_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.2"))
 HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "512"))
-HF_TASK = os.environ.get("HF_TASK", "text-generation")
+HF_TASK = os.environ.get("HF_TASK", "text-generation")  # requested task
 
-# Retrieval strictness + guardrail
 RELEVANCE_THRESHOLD = float(os.environ.get("RELEVANCE_THRESHOLD", "0.35"))
 NOT_FOUND_TEXT = "This item is not in our database."
 
+# Track actual task chosen + last init error (visible in /health)
+LLM_TASK_CHOSEN: str | None = None
+LAST_LLM_ERROR: str | None = None
 
-
+# ──────────────────────────────────────────
+# FastAPI + CORS  (UNCHANGED)
+# ──────────────────────────────────────────
 app = FastAPI(title="Nigerian Food Recommender API")
 
-# ⚠️ CORS block kept EXACTLY as you had it
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -42,38 +50,63 @@ async def log_requests(request: Request, call_next):
     print(f"{request.method} {request.url.path} -> {resp.status_code}")
     return resp
 
-
 # ──────────────────────────────────────────
-# LLM + Embeddings + Vector DB builders
+# Builders
 # ──────────────────────────────────────────
 def chroma_present(path: str) -> bool:
     return os.path.isdir(path) and any(os.scandir(path))
 
 def _ensure_hf_env():
-    """Ensure the token is available to HF clients."""
+    """Expose the token the way HF libs expect."""
     if not HF_TOKEN:
         raise RuntimeError("HF_TOKEN env var is missing.")
-    os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN  # what HF libs expect
+    os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 
+def _try_make_llm(task: str):
+    """Create an endpoint client for a given task."""
+    return HuggingFaceEndpoint(
+        repo_id=HF_MODEL,
+        task=task,
+        temperature=HF_TEMPERATURE,
+        max_new_tokens=HF_MAX_NEW_TOKENS,
+    )
 
 def build_llm():
+    """Try requested task first, then auto-fallback to the other task."""
+    global LLM_TASK_CHOSEN, LAST_LLM_ERROR
     try:
-        if not HF_TOKEN:
-            raise RuntimeError("HF_TOKEN env var is missing.")
-        os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
-        llm = HuggingFaceEndpoint(
-            repo_id=HF_MODEL,
-            task=HF_TASK,  # <-- use env to pick 'conversational'
-            temperature=HF_TEMPERATURE,
-            max_new_tokens=HF_MAX_NEW_TOKENS,
-        )
-        _ = llm.invoke("ping")
-        print(f"LLM ready: {HF_MODEL} (task={HF_TASK})")
-        return llm
-    except Exception as e:
-        print(f"LLM init failed: {e}\n{format_exc()}")
+        _ensure_hf_env()
+
+        # Try your requested task first; then the alternative.
+        candidates = [HF_TASK]
+        if HF_TASK != "conversational":
+            candidates.append("conversational")
+        if HF_TASK != "text-generation":
+            candidates.append("text-generation")
+
+        tried = set()
+        for task in candidates:
+            if task in tried:
+                continue
+            tried.add(task)
+            try:
+                llm = _try_make_llm(task)
+                _ = llm.invoke("ping")  # quick sanity check
+                LLM_TASK_CHOSEN = task
+                LAST_LLM_ERROR = None
+                print(f"LLM ready: {HF_MODEL} (task={task})")
+                return llm
+            except Exception as e:
+                LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
+                print(f"[LLM attempt task={task}] failed: {LAST_LLM_ERROR}")
+
+        print("All LLM task attempts failed.")
         return None
 
+    except Exception as e:
+        LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
+        print(f"LLM init failed (fatal): {LAST_LLM_ERROR}\n{format_exc()}")
+        return None
 
 def build_embeddings():
     try:
@@ -85,8 +118,7 @@ def build_embeddings():
         print(f"Embeddings init failed: {e}\n{format_exc()}")
         return None
 
-
-# Build components once at startup
+# Build once at startup
 LLM = build_llm()
 EMB = build_embeddings()
 VDB = None
@@ -100,7 +132,6 @@ if EMB and chroma_present(CHROMA_DIR):
         print("Chroma loaded.")
     except Exception as e:
         print(f"Chroma load failed: {e}\n{format_exc()}")
-
 
 # ──────────────────────────────────────────
 # Retrieval helpers (strict, no fabrication)
@@ -158,13 +189,13 @@ def answer_from_context(question: str) -> Dict[str, Any]:
 
     try:
         content = LLM.invoke(prompt) or ""
-        if not content.strip() or NOT_FOUND_TEXT.lower() in content.lower():
+        text = (getattr(content, "content", content) or "").strip()
+        if not text or NOT_FOUND_TEXT.lower() in text.lower():
             return {"answer": NOT_FOUND_TEXT, "sources": format_sources(docs)}
-        return {"answer": content.strip(), "sources": format_sources(docs)}
+        return {"answer": text, "sources": format_sources(docs)}
     except Exception as e:
         print(f"LLM invoke error: {e}\n{format_exc()}")
         return {"answer": NOT_FOUND_TEXT, "sources": format_sources(docs)}
-
 
 # ──────────────────────────────────────────
 # API
@@ -185,6 +216,9 @@ async def health_check():
         "hf_model": HF_MODEL,
         "hf_embed_model": HF_EMBED_MODEL,
         "relevance_threshold": RELEVANCE_THRESHOLD,
+        "hf_task_requested": HF_TASK,
+        "hf_task_chosen": LLM_TASK_CHOSEN,
+        "last_llm_error": LAST_LLM_ERROR,
     }
 
 @app.options("/ask")
