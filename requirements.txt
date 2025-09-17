@@ -7,3 +7,4 @@ pandas
 fastapi
 uvicorn
 google-cloud-aiplatform
+python-dotenv

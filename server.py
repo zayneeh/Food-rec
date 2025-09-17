@@ -8,70 +8,36 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from dotenv import load_dotenv
 from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 
-# ────────────────────────────────────────────────────────────────────────────────
-# GOOGLE CLOUD AUTHENTICATION - ADD THIS SECTION
-# ────────────────────────────────────────────────────────────────────────────────
-def setup_google_auth():
-    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-        print("Using existing GOOGLE_APPLICATION_CREDENTIALS")
-        return True
-    
-    sa_key = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not sa_key:
-        print("No GCP_SA_KEY found")
-        return False
-    
-    try:
-        sa_key_dict = json.loads(sa_key)
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(sa_key_dict, f)
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f.name
-            print(f"Auth configured: {f.name}")
-        return True
-    except Exception as e:
-        print(f"Auth setup failed: {e}")
-        return False
+# Load .env if present
+load_dotenv()
 
-# Set up auth on startup
-AUTH_SUCCESS = setup_google_auth()
-
-# ────────────────────────────────────────────────────────────────────────────────
-# ENV / CONFIG
-# ────────────────────────────────────────────────────────────────────────────────
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID") or os.environ.get("GCP_PROJECT")
-LOCATION = os.environ.get("GCP_LOCATION", "us-central1")
+LOCATION   = os.environ.get("GCP_LOCATION", "us-central1")
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
+# Do NOT hard-fail if creds are missing; we’ll gracefully fall back.
+SA_KEY     = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
-# Comma-separated origins (edit in your Render env if needed)
-ALLOWED_ORIGINS_ENV = os.environ.get(
-    "ALLOWED_ORIGINS",
-    "https://zeesfoodarchivee.netlify.app,http://localhost:5173,http://localhost:3000",
-)
-ALLOWED_ORIGINS: List[str] = [o.strip() for o in ALLOWED_ORIGINS_ENV.split(",") if o.strip()]
-
-# ────────────────────────────────────────────────────────────────────────────────
-# APP + CORS
-# ────────────────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Nigerian Food Recommender API")
 
+# CORS: allow Netlify deploys (including previews). You can relax/tighten as needed.
+CORS_ORIGIN_REGEX = r"https://.*\.netlify\.app"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,     
-    allow_credentials=False,           
+    allow_origin_regex=CORS_ORIGIN_REGEX,
+    allow_credentials=False,               # keep False when using "*" later
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
-qa_chain = None  
+qa_chain = None
+
 def build_llm():
-    if not AUTH_SUCCESS:
-        print("Skipping LLM init - no auth")
-        return None
+    """Try to initialize Gemini; fall back silently if auth or API init fails."""
     try:
         return ChatVertexAI(
             model="gemini-1.5-flash",
@@ -88,6 +54,7 @@ LLM = build_llm()
 # ────────────────────────────────────────────────────────────────────────────────
 # HELPERS
 # ────────────────────────────────────────────────────────────────────────────────
+
 def chroma_present(path: str) -> bool:
     if not os.path.isdir(path):
         return False
@@ -100,6 +67,7 @@ def chroma_present(path: str) -> bool:
     return any(os.path.isdir(os.path.join(path, d)) for d in files)
 
 def get_chain():
+    """Prefer RetrievalQA; fall back to LLM-only if vector store/embeddings aren’t ready."""
     global qa_chain
     if qa_chain:
         return qa_chain
@@ -111,15 +79,18 @@ def get_chain():
             print(f"No valid Chroma store in '{CHROMA_DIR}'. Using LLM-only.")
             return None
 
-        if not AUTH_SUCCESS:
-            print("No auth; skipping embeddings")
+        # Try to init embeddings; if it fails (e.g., no GCP auth), we’ll fall back.
+        emb = None
+        try:
+            emb = VertexAIEmbeddings(
+                project=PROJECT_ID,
+                location=LOCATION,
+                model_name="text-embedding-004",
+            )
+        except Exception as e:
+            print(f"Embeddings init failed: {e}\n{format_exc()}")
             return None
 
-        emb = VertexAIEmbeddings(
-            project=PROJECT_ID,
-            location=LOCATION,
-            model_name="text-embedding-004",
-        )
         vectordb = Chroma(
             collection_name="knowledge_base",
             embedding_function=emb,
@@ -166,6 +137,7 @@ class AskRequest(BaseModel):
 # ────────────────────────────────────────────────────────────────────────────────
 # ROUTES
 # ────────────────────────────────────────────────────────────────────────────────
+
 @app.get("/")
 async def root():
     return {"message": "Nigerian Food Recommender API is running!"}
@@ -177,9 +149,9 @@ async def health_check():
         "project": PROJECT_ID,
         "location": LOCATION,
         "chroma_present": chroma_present(CHROMA_DIR),
-        "origins": ALLOWED_ORIGINS,
-        "auth_setup": AUTH_SUCCESS,
-        "google_creds_set": bool(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")),
+        "cors_origin_regex": CORS_ORIGIN_REGEX,
+        "google_creds_set": bool(SA_KEY),
+        "llm_initialized": bool(LLM),
     }
 
 # Handle preflight cleanly so the browser never errors before your code runs
@@ -210,8 +182,10 @@ async def ask(request: AskRequest) -> Dict[str, Any]:
             if not answer:
                 answer = llm_only_answer(request.question)
             return {"answer": answer, "sources": sources}
-        # no chain → LLM-only
+
+        # No retrieval chain → LLM-only
         return {"answer": llm_only_answer(request.question), "sources": []}
+
     except Exception as e:
         print(f"[/ask] Error: {e}\n{format_exc()}")
         fallback = get_mock_response(request.question)

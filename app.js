@@ -1,4 +1,3 @@
-// ===== API CONFIGURATION - ADD THIS LINE =====
 window.RECO_API_BASE = 'https://food-recommender-scq5.onrender.com/ask';
 
 // Menu toggle for mobile
@@ -17,7 +16,7 @@ menuToggle.addEventListener('click', () => {
   navLinks.style.padding = '1rem';
 });
 
-// ===== FOOD RECOMMENDER MODAL FUNCTIONALITY =====
+// RECOMMENDER MODAL
 
 // Modal control functions
 function openRecommender() {
@@ -31,11 +30,10 @@ function closeRecommender() {
 }
 
 function showStep(stepId) {
-  // Hide all steps
+
   document.querySelectorAll('.reco-step').forEach(step => {
     step.style.display = 'none';
   });
-  // Show target step
   document.getElementById(stepId).style.display = 'block';
 }
 
@@ -47,8 +45,8 @@ function clearResults() {
 
 // API call function 
 async function askAPI(question) {
-  console.log('🔍 Making API call to:', window.RECO_API_BASE);
-  console.log('❓ Question:', question);
+  console.log(' Making API call to:', window.RECO_API_BASE);
+  console.log(' Question:', question);
   
   if (!window.RECO_API_BASE) {
     throw new Error('API URL not configured');
@@ -65,14 +63,14 @@ async function askAPI(question) {
     
     if (!res.ok) {
       const errorText = await res.text();
-      console.error('❌ Error response:', errorText);
+      console.error('Error response:', errorText);
       throw new Error(`API Error: ${res.status} ${res.statusText} - ${errorText}`);
     }
     
     const data = await res.json();
-    console.log('✅ API response:', data);
+    console.log('API response:', data);
     
-    // SAFETY CHECK 
+    
     if (!data || typeof data !== 'object') {
       throw new Error('Invalid response format');
     }
@@ -94,9 +92,9 @@ async function askAPI(question) {
   }
 }
 
-// Step navigation event listeners
+// navigation 
 document.addEventListener('DOMContentLoaded', () => {
-  // Step 0 -> Choose mode
+  //  Choose mode
   document.getElementById('startChatBtn')?.addEventListener('click', () => {
     showStep('reco-step-chat');
   });
@@ -122,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showStep('reco-step-1');
   });
 
-  // Step 1 -> Choose recommendation type
+  // Choose recommendation type
   document.getElementById('byIngredientsBtn')?.addEventListener('click', () => {
     showStep('reco-step-ingredients');
   });
