@@ -13,3 +13,5 @@ torch
 sentence-transformers
 accelerate
 safetensors
+ollama
+langchain-text-splitters

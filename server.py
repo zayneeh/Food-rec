@@ -5,54 +5,49 @@ from typing import Dict, Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
-from dotenv import load_dotenv
 from starlette.requests import Request
-import json
-from google.oauth2 import service_account
 
-from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
+# LangChain (open-source backends)
+from langchain_community.chat_models import ChatOllama
+from langchain_community.embeddings import OllamaEmbeddings, HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Environment & Config
 # ────────────────────────────────────────────────────────────────────────────────
-load_dotenv()  # load .env when running locally
+# Optional .env if running locally
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 
-PROJECT_ID = os.environ.get("GCP_PROJECT_ID") or os.environ.get("GCP_PROJECT")
-LOCATION   = os.environ.get("GCP_LOCATION", "us-central1")
-CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
+CHROMA_DIR         = os.environ.get("CHROMA_DIR", "chroma_db")
 
-# Handle Google Cloud credentials properly
-credentials = None
-creds_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-if creds_json:
-    try:
-        # If it's a file path
-        if os.path.isfile(creds_json):
-            credentials = service_account.Credentials.from_service_account_file(creds_json)
-        else:
-            # If it's JSON content
-            creds_info = json.loads(creds_json)
-            credentials = service_account.Credentials.from_service_account_info(creds_info)
-    except Exception as e:
-        print(f"Failed to load credentials: {e}")
-        credentials = None
+# Ollama (LLM)
+OLLAMA_BASE_URL    = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL       = os.environ.get("OLLAMA_MODEL", "llama3.1:8b-instruct")  # e.g. qwen2:7b-instruct, phi3:mini
+OLLAMA_TEMPERATURE = float(os.environ.get("OLLAMA_TEMPERATURE", "0.2"))
+
+# Embeddings (choose Ollama OR HuggingFace tiny model)
+EMBED_BACKEND      = os.environ.get("EMBED_BACKEND", "hf")  # "ollama" or "hf"
+OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")  # if using EMBED_BACKEND=ollama
+HF_EMBED_MODEL     = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 
 app = FastAPI(title="Nigerian Food Recommender API")
 
-# *** TEMPORARY DEBUG - More permissive CORS ***
+# CORS (you can lock this down later)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],               # Temporarily allow all origins
-    allow_credentials=False,           # Keep False for wildcard origins
+    allow_origins=["*"],            # keep permissive while testing
+    allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
 
-# Log every request (helps confirm OPTIONS preflight + POST are hitting)
+# Debug log for every request
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     resp = await call_next(request)
@@ -65,14 +60,20 @@ async def log_requests(request: Request, call_next):
 qa_chain = None
 
 def build_llm():
+    """Create a ChatOllama client (open-source, local/remote)."""
     try:
-        return ChatVertexAI(
-            model="gemini-1.5-flash",
-            project=PROJECT_ID,
-            location=LOCATION,
-            temperature=0.2,
-            credentials=credentials,  # Pass credentials explicitly
+        llm = ChatOllama(
+            model=OLLAMA_MODEL,
+            base_url=OLLAMA_BASE_URL,
+            temperature=OLLAMA_TEMPERATURE,
+            # num_ctx etc. can be set via kwargs if needed
         )
+        # smoke test (non-fatal)
+        try:
+            _ = llm.invoke("ping")  # this will be very quick
+        except Exception as e:
+            print(f"Ollama reachable but ping failed (continuing): {e}")
+        return llm
     except Exception as e:
         print(f"LLM init failed: {e}\n{format_exc()}")
         return None
@@ -89,6 +90,23 @@ def chroma_present(path: str) -> bool:
         return True
     return any(os.path.isdir(os.path.join(path, d)) for d in files)
 
+def build_embeddings():
+    """Pick an embedding backend (Ollama or HuggingFace)."""
+    try:
+        if EMBED_BACKEND.lower() == "ollama":
+            print(f"Using OllamaEmbeddings: {OLLAMA_EMBED_MODEL}")
+            return OllamaEmbeddings(
+                model=OLLAMA_EMBED_MODEL,
+                base_url=OLLAMA_BASE_URL
+            )
+        else:
+            # tiny, CPU-friendly, widely available
+            print(f"Using HF Embeddings: {HF_EMBED_MODEL}")
+            return HuggingFaceEmbeddings(model_name=HF_EMBED_MODEL)
+    except Exception as e:
+        print(f"Embeddings init failed: {e}\n{format_exc()}")
+        return None
+
 def get_chain():
     """Return RetrievalQA if embeddings/Chroma are ready; else None."""
     global qa_chain
@@ -102,15 +120,9 @@ def get_chain():
             print(f"No valid Chroma store in '{CHROMA_DIR}'. Using LLM-only.")
             return None
 
-        try:
-            emb = VertexAIEmbeddings(
-                project=PROJECT_ID,
-                location=LOCATION,
-                model_name="text-embedding-004",
-                credentials=credentials,  # Pass credentials explicitly
-            )
-        except Exception as e:
-            print(f"Embeddings init failed: {e}\n{format_exc()}")
+        emb = build_embeddings()
+        if not emb:
+            print("Embeddings not available; using LLM-only.")
             return None
 
         vectordb = Chroma(
@@ -149,7 +161,8 @@ def llm_only_answer(question: str) -> str:
             "You are a friendly Nigerian food assistant. Be concise and practical.\n\n"
             f"Question: {question}\nAnswer:"
         )
-        msg = LLM.invoke(prompt)
+        msg = LLM.invoke(prompt)  # ChatOllama accepts raw strings
+        # ChatOllama returns str or AIMessage; handle both
         return getattr(msg, "content", msg) or get_mock_response(question)["result"]
     except Exception as e:
         print(f"[llm_only] Error: {e}\n{format_exc()}")
@@ -169,15 +182,13 @@ async def root():
 async def health_check():
     return {
         "status": "ok",
-        "project": PROJECT_ID,
-        "location": LOCATION,
         "chroma_present": chroma_present(CHROMA_DIR),
-        "allowed_origins": ["*"],  # Show wildcard since we're using it
-        "google_creds_set": bool(credentials),
         "llm_initialized": bool(LLM),
+        "embed_backend": EMBED_BACKEND,
+        "ollama_model": OLLAMA_MODEL,
+        "ollama_base_url": OLLAMA_BASE_URL,
     }
 
-# Add explicit OPTIONS handler for debugging
 @app.options("/ask")
 async def ask_options():
     return {"message": "CORS preflight OK"}
