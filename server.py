@@ -1,4 +1,6 @@
 import os
+import json
+import tempfile
 from traceback import format_exc
 from typing import Dict, Any, List
 
@@ -10,6 +12,32 @@ from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 
+# ────────────────────────────────────────────────────────────────────────────────
+# GOOGLE CLOUD AUTHENTICATION - ADD THIS SECTION
+# ────────────────────────────────────────────────────────────────────────────────
+def setup_google_auth():
+    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        print("Using existing GOOGLE_APPLICATION_CREDENTIALS")
+        return True
+    
+    sa_key = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if not sa_key:
+        print("No GCP_SA_KEY found")
+        return False
+    
+    try:
+        sa_key_dict = json.loads(sa_key)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(sa_key_dict, f)
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f.name
+            print(f"Auth configured: {f.name}")
+        return True
+    except Exception as e:
+        print(f"Auth setup failed: {e}")
+        return False
+
+# Set up auth on startup
+AUTH_SUCCESS = setup_google_auth()
 
 # ────────────────────────────────────────────────────────────────────────────────
 # ENV / CONFIG
@@ -32,18 +60,18 @@ app = FastAPI(title="Nigerian Food Recommender API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,     # explicit origins
-    allow_credentials=False,           # keep False when using wildcard-y headers
+    allow_origins=ALLOWED_ORIGINS,     
+    allow_credentials=False,           
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
 
-# ────────────────────────────────────────────────────────────────────────────────
-# GLOBALS
-# ────────────────────────────────────────────────────────────────────────────────
-qa_chain = None  # retrieval chain (lazy)
+qa_chain = None  
 def build_llm():
+    if not AUTH_SUCCESS:
+        print("Skipping LLM init - no auth")
+        return None
     try:
         return ChatVertexAI(
             model="gemini-1.5-flash",
@@ -52,7 +80,7 @@ def build_llm():
             temperature=0.2,
         )
     except Exception as e:
-        print(f"[init] LLM init failed: {e}\n{format_exc()}")
+        print(f"LLM init failed: {e}\n{format_exc()}")
         return None
 
 LLM = build_llm()
@@ -77,10 +105,14 @@ def get_chain():
         return qa_chain
     try:
         if not LLM:
-            print("[init] No LLM; retrieval disabled.")
+            print("No LLM; retrieval disabled.")
             return None
         if not chroma_present(CHROMA_DIR):
-            print(f"[init] No valid Chroma store in '{CHROMA_DIR}'. Using LLM-only.")
+            print(f"No valid Chroma store in '{CHROMA_DIR}'. Using LLM-only.")
+            return None
+
+        if not AUTH_SUCCESS:
+            print("No auth; skipping embeddings")
             return None
 
         emb = VertexAIEmbeddings(
@@ -100,10 +132,10 @@ def get_chain():
             return_source_documents=True,
         )
         qa_chain = qa
-        print("[init] RetrievalQA ready.")
+        print("RetrievalQA ready.")
         return qa_chain
     except Exception as e:
-        print(f"[init] Retrieval init failed: {e}\n{format_exc()}")
+        print(f"Retrieval init failed: {e}\n{format_exc()}")
         return None
 
 def get_mock_response(question: str) -> Dict[str, Any]:
@@ -146,6 +178,8 @@ async def health_check():
         "location": LOCATION,
         "chroma_present": chroma_present(CHROMA_DIR),
         "origins": ALLOWED_ORIGINS,
+        "auth_setup": AUTH_SUCCESS,
+        "google_creds_set": bool(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")),
     }
 
 # Handle preflight cleanly so the browser never errors before your code runs
