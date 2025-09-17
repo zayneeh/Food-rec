@@ -5,40 +5,54 @@ from typing import Dict, Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from starlette.requests import Request
-from dotenv import load_dotenv
 
-# Open-source LLM / embeddings / vectorstore
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-from langchain_community.llms import HuggingFacePipeline
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from dotenv import load_dotenv
+from starlette.requests import Request
+import json
+from google.oauth2 import service_account
+
+from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Environment & Config
 # ────────────────────────────────────────────────────────────────────────────────
-load_dotenv()
+load_dotenv()  # load .env when running locally
 
-CHROMA_DIR   = os.environ.get("CHROMA_DIR", "chroma_db")
-HF_MODEL     = os.environ.get("HF_MODEL", "distilgpt2")  # tiny, fast default
-GEN_MAX_TOK  = int(os.environ.get("GEN_MAX_TOK", "160"))
-GEN_TEMP     = float(os.environ.get("GEN_TEMP", "0.7"))
-ENABLE_LLM   = os.environ.get("ENABLE_LLM", "1") == "1"  # allow hard-off
-EMB_MODEL    = os.environ.get("EMB_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+PROJECT_ID = os.environ.get("GCP_PROJECT_ID") or os.environ.get("GCP_PROJECT")
+LOCATION   = os.environ.get("GCP_LOCATION", "us-central1")
+CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
 
-app = FastAPI(title="Nigerian Food Recommender API (Open-Source)")
+# Handle Google Cloud credentials properly
+credentials = None
+creds_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+if creds_json:
+    try:
+        # If it's a file path
+        if os.path.isfile(creds_json):
+            credentials = service_account.Credentials.from_service_account_file(creds_json)
+        else:
+            # If it's JSON content
+            creds_info = json.loads(creds_json)
+            credentials = service_account.Credentials.from_service_account_info(creds_info)
+    except Exception as e:
+        print(f"Failed to load credentials: {e}")
+        credentials = None
 
-# CORS: permissive; safe because allow_credentials=False
+app = FastAPI(title="Nigerian Food Recommender API")
+
+# *** TEMPORARY DEBUG - More permissive CORS ***
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=["*"],               # Temporarily allow all origins
+    allow_credentials=False,           # Keep False for wildcard origins
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
-# Simple request logger
+# Log every request (helps confirm OPTIONS preflight + POST are hitting)
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     resp = await call_next(request)
@@ -46,8 +60,25 @@ async def log_requests(request: Request, call_next):
     return resp
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Utilities
+# LLM + Retrieval Setup
 # ────────────────────────────────────────────────────────────────────────────────
+qa_chain = None
+
+def build_llm():
+    try:
+        return ChatVertexAI(
+            model="gemini-1.5-flash",
+            project=PROJECT_ID,
+            location=LOCATION,
+            temperature=0.2,
+            credentials=credentials,  # Pass credentials explicitly
+        )
+    except Exception as e:
+        print(f"LLM init failed: {e}\n{format_exc()}")
+        return None
+
+LLM = build_llm()
+
 def chroma_present(path: str) -> bool:
     if not os.path.isdir(path):
         return False
@@ -58,148 +89,109 @@ def chroma_present(path: str) -> bool:
         return True
     return any(os.path.isdir(os.path.join(path, d)) for d in files)
 
-# ────────────────────────────────────────────────────────────────────────────────
-# LLM (open-source) + Retrieval
-# ────────────────────────────────────────────────────────────────────────────────
-LLM = None
-qa_chain = None
-SELECTED_MODEL = None
-
-def build_llm():
-    """Create a small HF text-gen pipeline; fall back gracefully."""
-    if not ENABLE_LLM:
-        print("ENABLE_LLM=0 → LLM disabled (mock mode).")
-        return None
-    try:
-        print(f"Loading HF model: {HF_MODEL}")
-        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL)
-        model = AutoModelForCausalLM.from_pretrained(HF_MODEL)
-        gen = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tokenizer,
-            max_new_tokens=GEN_MAX_TOK,
-            temperature=GEN_TEMP,
-            do_sample=True,
-            pad_token_id=tokenizer.eos_token_id,
-            # device is auto (CPU). If you have GPU on your host, set device=0
-        )
-        llm = HuggingFacePipeline(pipeline=gen)
-        global SELECTED_MODEL
-        SELECTED_MODEL = HF_MODEL
-        print(f"✓ HF model ready: {HF_MODEL}")
-        return llm
-    except Exception as e:
-        print(f"Open-source LLM init failed: {e}\n{format_exc()}")
-        return None
-
 def get_chain():
-    """Return RetrievalQA if LLM & Chroma are available; else None."""
-    global qa_chain, LLM
+    """Return RetrievalQA if embeddings/Chroma are ready; else None."""
+    global qa_chain
     if qa_chain:
         return qa_chain
-    if LLM is None:
-        LLM = build_llm()
-    if not LLM:
-        print("No LLM; retrieval disabled (mock/LLM-off).")
-        return None
-    if not chroma_present(CHROMA_DIR):
-        print(f"No valid Chroma store in '{CHROMA_DIR}'. Using LLM-only.")
-        return None
     try:
-        print(f"Loading embeddings: {EMB_MODEL}")
-        emb = HuggingFaceEmbeddings(model_name=EMB_MODEL, model_kwargs={"device": "cpu"})
+        if not LLM:
+            print("No LLM; retrieval disabled.")
+            return None
+        if not chroma_present(CHROMA_DIR):
+            print(f"No valid Chroma store in '{CHROMA_DIR}'. Using LLM-only.")
+            return None
+
+        try:
+            emb = VertexAIEmbeddings(
+                project=PROJECT_ID,
+                location=LOCATION,
+                model_name="text-embedding-004",
+                credentials=credentials,  # Pass credentials explicitly
+            )
+        except Exception as e:
+            print(f"Embeddings init failed: {e}\n{format_exc()}")
+            return None
+
         vectordb = Chroma(
             collection_name="knowledge_base",
             embedding_function=emb,
             persist_directory=CHROMA_DIR,
         )
-        chain = RetrievalQA.from_chain_type(
+        qa_chain = RetrievalQA.from_chain_type(
             llm=LLM,
             chain_type="stuff",
             retriever=vectordb.as_retriever(search_kwargs={"k": 4}),
             return_source_documents=True,
         )
         print("RetrievalQA ready.")
-        qa_chain = chain
         return qa_chain
     except Exception as e:
         print(f"Retrieval init failed: {e}\n{format_exc()}")
         return None
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Fallback answers (fast, no model required)
+# Helpers & Mock
 # ────────────────────────────────────────────────────────────────────────────────
-def fallback_answer(question: str) -> str:
-    q = (question or "").lower()
-    if "jollof" in q or "rice" in q:
-        return ("Jollof Rice: tomato-pepper base with onions & spices. "
-                "Fry paste, cook blended tomato till oil separates, add spices, "
-                "stir in rice + stock, steam till fluffy; serve with plantain.")
+def get_mock_response(question: str) -> Dict[str, Any]:
+    q = question.lower()
+    if "jollof" in q:
+        return {"result": "Jollof Rice is Nigeria's most famous dish—tomato-pepper base with onions and spices.", "source_documents": []}
     if "egusi" in q:
-        return ("Egusi soup: ground melon seeds with palm oil, peppers, stock, iru, and greens. "
-                "Toast egusi lightly, add stock gradually, add meat/fish, finish with greens. "
-                "Great with pounded yam or eba.")
-    if "suya" in q:
-        return ("Suya: thin beef strips coated in yaji (peanut-ginger-garlic-chili mix), "
-                "grilled hot; serve with onions & tomatoes.")
-    if "pepper soup" in q:
-        return ("Pepper Soup: broth with uda, uziza seed, calabash nutmeg, chiles & scent leaves. "
-                "Simmer meat/fish till tender; add spices; finish with scent leaves.")
-    return ("I can help with Nigerian recipes—Jollof, Egusi, Efo Riro, Suya, Pepper Soup. "
-            "Tell me a dish or list your ingredients, and I’ll suggest options.")
+        return {"result": "Egusi soup uses ground melon seeds, palm oil, peppers and greens; great with pounded yam.", "source_documents": []}
+    return {"result": "I can help with Nigerian recipes! Ask about Jollof, Egusi, Efo Riro, or share ingredients.", "source_documents": []}
 
 def llm_only_answer(question: str) -> str:
-    """Use HF LLM when available; otherwise fallback."""
-    global LLM
-    if LLM is None:
-        LLM = build_llm()
     if not LLM:
-        return fallback_answer(question)
+        return get_mock_response(question)["result"]
     try:
         prompt = (
             "You are a friendly Nigerian food assistant. Be concise and practical.\n\n"
             f"Question: {question}\nAnswer:"
         )
         msg = LLM.invoke(prompt)
-        return getattr(msg, "content", msg) or fallback_answer(question)
+        return getattr(msg, "content", msg) or get_mock_response(question)["result"]
     except Exception as e:
         print(f"[llm_only] Error: {e}\n{format_exc()}")
-        return fallback_answer(question)
+        return get_mock_response(question)["result"]
+
+class AskRequest(BaseModel):
+    question: str
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Routes
 # ────────────────────────────────────────────────────────────────────────────────
-class AskRequest(BaseModel):
-    question: str
-
 @app.get("/")
 async def root():
-    return {"message": "Nigerian Food Recommender API is running (open-source)."}
+    return {"message": "Nigerian Food Recommender API is running!"}
 
 @app.get("/health")
-async def health():
+async def health_check():
     return {
         "status": "ok",
-        "mode": "oss",
-        "hf_model": SELECTED_MODEL or HF_MODEL,
-        "embeddings": EMB_MODEL,
+        "project": PROJECT_ID,
+        "location": LOCATION,
         "chroma_present": chroma_present(CHROMA_DIR),
-        "cors": {"allow_origins": "*", "allow_credentials": False},
-        "llm_enabled": ENABLE_LLM,
+        "allowed_origins": ["*"],  # Show wildcard since we're using it
+        "google_creds_set": bool(credentials),
         "llm_initialized": bool(LLM),
     }
 
+# Add explicit OPTIONS handler for debugging
+@app.options("/ask")
+async def ask_options():
+    return {"message": "CORS preflight OK"}
+
 @app.get("/ask")
-async def ask_hint():
-    return {"hint": "POST /ask with JSON: {\"question\": \"...\"}"}
+async def ask_get_hint():
+    return {"hint": "Use POST /ask with JSON body: {\"question\": \"...\"}"}
 
 @app.post("/ask")
-async def ask(req: AskRequest) -> Dict[str, Any]:
+async def ask(request: AskRequest) -> Dict[str, Any]:
     try:
         chain = get_chain()
         if chain:
-            out = chain.invoke({"query": req.question})
+            out = chain.invoke({"query": request.question})
             answer = out.get("result") or out.get("answer") or ""
             sources = []
             for doc in (out.get("source_documents") or []):
@@ -209,16 +201,13 @@ async def ask(req: AskRequest) -> Dict[str, Any]:
                     "snippet": (doc.page_content[:240] + "...") if len(doc.page_content) > 240 else doc.page_content,
                 })
             if not answer:
-                answer = llm_only_answer(req.question)
+                answer = llm_only_answer(request.question)
             return {"answer": answer, "sources": sources}
 
-        # Fallbacks: LLM-only → static fallback
-        return {"answer": llm_only_answer(req.question), "sources": []}
+        # Fallback: LLM only
+        return {"answer": llm_only_answer(request.question), "sources": []}
 
     except Exception as e:
         print(f"[/ask] Error: {e}\n{format_exc()}")
-        return {
-            "answer": ("I'm having technical difficulties, but I can still help with Nigerian recipes. "
-                       "Ask about Jollof, Egusi, Suya, Pepper Soup, or share your ingredients."),
-            "sources": [],
-        }
+        fallback = get_mock_response(request.question)
+        return {"answer": fallback["result"], "sources": []}
