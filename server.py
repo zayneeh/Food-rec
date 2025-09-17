@@ -25,9 +25,11 @@ SA_KEY     = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")  # optional
 
 app = FastAPI(title="Nigerian Food Recommender API")
 
-# *** TEMP: exact origin allow-list to guarantee preflight success ***
-# Switch back to allow_origin_regex=r"https://.*\.netlify\.app" when you want previews.
-ALLOWED_ORIGINS = ["https://zeesfoodarchivee.netlify.app"]
+# *** FIXED: Updated to match your actual Netlify domain ***
+ALLOWED_ORIGINS = [
+    "https://zeesfoodarchivee.netlify.app",  # Your production domain (note the extra 'e')
+    "https://zeesfoodarchive.netlify.app",   # In case you have both variants
+]
 
 app.add_middleware(
     CORSMiddleware,
