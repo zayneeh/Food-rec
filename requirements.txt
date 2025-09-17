@@ -14,5 +14,4 @@ accelerate
 safetensors
 ollama
 langchain-text-splitters
-langchain-embeddings
 langchain-huggingface
