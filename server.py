@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from dotenv import load_dotenv
+from starlette.requests import Request
+
 from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
@@ -14,7 +16,7 @@ from langchain.chains import RetrievalQA
 # ────────────────────────────────────────────────────────────────────────────────
 # Environment & Config
 # ────────────────────────────────────────────────────────────────────────────────
-load_dotenv()  # load .env if running locally
+load_dotenv()  # load .env when running locally
 
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID") or os.environ.get("GCP_PROJECT")
 LOCATION   = os.environ.get("GCP_LOCATION", "us-central1")
@@ -23,15 +25,24 @@ SA_KEY     = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")  # optional
 
 app = FastAPI(title="Nigerian Food Recommender API")
 
-# Allow production + Netlify preview deployments
-CORS_ORIGIN_REGEX = r"https://.*\.netlify\.app"
+# *** TEMP: exact origin allow-list to guarantee preflight success ***
+# Switch back to allow_origin_regex=r"https://.*\.netlify\.app" when you want previews.
+ALLOWED_ORIGINS = ["https://zeesfoodarchivee.netlify.app"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=CORS_ORIGIN_REGEX,
-    allow_credentials=False,           # must be False with wildcard/regex
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,           # keep False unless you need cookies/auth
+    allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Log every request (helps confirm OPTIONS preflight + POST are hitting)
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    resp = await call_next(request)
+    print(f"{request.method} {request.url.path} -> {resp.status_code}")
+    return resp
 
 # ────────────────────────────────────────────────────────────────────────────────
 # LLM + Retrieval Setup
@@ -39,7 +50,6 @@ app.add_middleware(
 qa_chain = None
 
 def build_llm():
-    """Create a Vertex/Gemini chat model, fall back gracefully if creds missing."""
     try:
         return ChatVertexAI(
             model="gemini-1.5-flash",
@@ -64,7 +74,7 @@ def chroma_present(path: str) -> bool:
     return any(os.path.isdir(os.path.join(path, d)) for d in files)
 
 def get_chain():
-    """Return a RetrievalQA chain if embeddings/Chroma are available, else None."""
+    """Return RetrievalQA if embeddings/Chroma are ready; else None."""
     global qa_chain
     if qa_chain:
         return qa_chain
@@ -104,7 +114,7 @@ def get_chain():
         return None
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Helpers & Mock Responses
+# Helpers & Mock
 # ────────────────────────────────────────────────────────────────────────────────
 def get_mock_response(question: str) -> Dict[str, Any]:
     q = question.lower()
@@ -145,15 +155,12 @@ async def health_check():
         "project": PROJECT_ID,
         "location": LOCATION,
         "chroma_present": chroma_present(CHROMA_DIR),
-        "cors_origin_regex": CORS_ORIGIN_REGEX,
+        "allowed_origins": ALLOWED_ORIGINS,
         "google_creds_set": bool(SA_KEY),
         "llm_initialized": bool(LLM),
     }
 
-@app.options("/ask")
-async def ask_options():
-    # Preflight handler
-    return {}
+# Note: No custom @app.options("/ask") handler — CORSMiddleware will handle preflight.
 
 @app.get("/ask")
 async def ask_get_hint():
