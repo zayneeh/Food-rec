@@ -25,18 +25,14 @@ SA_KEY     = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")  # optional
 
 app = FastAPI(title="Nigerian Food Recommender API")
 
-# *** FIXED: Updated to match your actual Netlify domain ***
-ALLOWED_ORIGINS = [
-    "https://zeesfoodarchivee.netlify.app",  # Your production domain (note the extra 'e')
-    "https://zeesfoodarchive.netlify.app",   # In case you have both variants
-]
-
+# *** TEMPORARY DEBUG - More permissive CORS ***
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=False,           # keep False unless you need cookies/auth
-    allow_methods=["*"],
+    allow_origins=["*"],               # Temporarily allow all origins
+    allow_credentials=False,           # Keep False for wildcard origins
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Log every request (helps confirm OPTIONS preflight + POST are hitting)
@@ -157,12 +153,14 @@ async def health_check():
         "project": PROJECT_ID,
         "location": LOCATION,
         "chroma_present": chroma_present(CHROMA_DIR),
-        "allowed_origins": ALLOWED_ORIGINS,
         "google_creds_set": bool(SA_KEY),
         "llm_initialized": bool(LLM),
     }
 
-# Note: No custom @app.options("/ask") handler — CORSMiddleware will handle preflight.
+# Add explicit OPTIONS handler for debugging
+@app.options("/ask")
+async def ask_options():
+    return {"message": "CORS preflight OK"}
 
 @app.get("/ask")
 async def ask_get_hint():
