@@ -45,52 +45,41 @@ function clearResults() {
 
 // API call function 
 async function askAPI(question) {
-  console.log(' Making API call to:', window.RECO_API_BASE);
-  console.log(' Question:', question);
-  
-  if (!window.RECO_API_BASE) {
-    throw new Error('API URL not configured');
-  }
-  
+  if (!window.RECO_API_BASE) throw new Error('API URL not configured');
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+
   try {
     const res = await fetch(window.RECO_API_BASE, {
       method: 'POST',
+      mode: 'cors',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question })
+      body: JSON.stringify({ question }),
+      cache: 'no-store',
+      signal: ctrl.signal
     });
-    
-    console.log('📡 Response status:', res.status);
-    
+
+    clearTimeout(timer);
+
     if (!res.ok) {
-      const errorText = await res.text();
-      console.error('Error response:', errorText);
-      throw new Error(`API Error: ${res.status} ${res.statusText} - ${errorText}`);
+      const text = await res.text().catch(() => '');
+      throw new Error(`API Error ${res.status} ${res.statusText} — ${text.slice(0, 300)}`);
     }
-    
-    const data = await res.json();
-    console.log('API response:', data);
-    
-    
-    if (!data || typeof data !== 'object') {
-      throw new Error('Invalid response format');
-    }
-    
-    // Ensure answer exists
-    if (!data.answer) {
-      data.answer = 'No answer received from API';
-    }
-    
-    // Ensure sources is an array
-    if (!Array.isArray(data.sources)) {
-      data.sources = [];
-    }
-    
+
+    const data = await res.json().catch(() => ({}));
+    if (!data || typeof data !== 'object') throw new Error('Invalid JSON from API');
+    if (!data.answer) data.answer = 'No answer received from API';
+    if (!Array.isArray(data.sources)) data.sources = [];
     return data;
-  } catch (error) {
-    console.error('💥 API call failed:', error);
-    throw error;
+
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') throw new Error('Request timed out');
+    throw err;
   }
 }
+
 
 // navigation 
 document.addEventListener('DOMContentLoaded', () => {
