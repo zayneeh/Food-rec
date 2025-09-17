@@ -1,51 +1,61 @@
-# build_index.py  — open-source embeddings (no Vertex)
-import os
-from pathlib import Path
+"""
+build_index.py
+Builds a Chroma vector database using Hugging Face Inference API embeddings.
+Reads configuration from environment variables or a local .env file.
+"""
 
+import os
+import shutil
+from pathlib import Path
 from dotenv import load_dotenv
-from langchain_community.document_loaders import CSVLoader
+
+from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import CSVLoader
 from langchain_community.vectorstores import Chroma
 
-# Choose ONE of these backends:
-USE_BACKEND = os.environ.get("EMBED_BACKEND", "hf")  # "hf" or "ollama"
-
-if USE_BACKEND.lower() == "ollama":
-    from langchain_community.embeddings import OllamaEmbeddings
-    OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-    EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-    def make_embeddings():
-        print(f"Using Ollama embeddings: {EMBED_MODEL} @ {OLLAMA_BASE_URL}")
-        return OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
-else:
-    from langchain_community.embeddings import HuggingFaceEmbeddings
-    EMBED_MODEL = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-    def make_embeddings():
-        print(f"Using HF embeddings: {EMBED_MODEL}")
-        return HuggingFaceEmbeddings(model_name=EMBED_MODEL)
-
+# ── Load .env file if present ──
 load_dotenv()
 
-DATA_CSV   = os.environ.get("DATA_CSV", str(Path("data") / "Nigerian meals.csv"))
-CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
-COLLECTION = os.environ.get("CHROMA_COLLECTION", "knowledge_base")
+# ── Environment variables with defaults ──
+HF_TOKEN       = os.getenv("HF_TOKEN", "")
+HF_EMBED_MODEL = os.getenv("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+DATA_CSV       = os.getenv("DATA_CSV", "data/Nigerian meals.csv")
+CHROMA_DIR     = os.getenv("CHROMA_DIR", "chroma_db")
+COLLECTION     = os.getenv("CHROMA_COLLECTION", "knowledge_base")
 
+if not HF_TOKEN:
+    raise RuntimeError(
+        "HF_TOKEN is missing.  Set it in a .env file or your environment."
+    )
+
+# The embeddings client looks for this specific variable
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
+
+print(f"[build] Loading CSV: {DATA_CSV}")
 loader = CSVLoader(file_path=DATA_CSV, encoding="utf-8-sig")
 docs = loader.load()
+
+print("[build] Splitting documents…")
 splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
 chunks = splitter.split_documents(docs)
-
 for d in chunks:
-    src = d.metadata.get("source", DATA_CSV)
-    d.metadata["source"] = str(src)
+    d.metadata["source"] = d.metadata.get("source", DATA_CSV)
 
+print(f"[build] Creating HF Endpoint embeddings: {HF_EMBED_MODEL}")
+emb = HuggingFaceEndpointEmbeddings(model=HF_EMBED_MODEL)
 
-emb = make_embeddings()
-vs = Chroma.from_documents(
+# Optional: clear old DB so we always rebuild from scratch
+if os.path.isdir(CHROMA_DIR):
+    print(f"[build] Removing old DB at {CHROMA_DIR}")
+    shutil.rmtree(CHROMA_DIR)
+
+print(f"[build] Writing Chroma DB to: {CHROMA_DIR}")
+Chroma.from_documents(
     documents=chunks,
     embedding=emb,
     persist_directory=CHROMA_DIR,
     collection_name=COLLECTION,
 )
-vs.persist()
-print(f"Index built to '{CHROMA_DIR}' using embeddings: {EMBED_MODEL} (backend={USE_BACKEND})")
+
+print("[build] ✅ Finished building Chroma index.")
