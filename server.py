@@ -7,72 +7,54 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.requests import Request
 
-# LangChain (open-source backends)
 from langchain_community.chat_models import ChatOllama
 from langchain_community.embeddings import OllamaEmbeddings, HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Environment & Config
-# ────────────────────────────────────────────────────────────────────────────────
-# Optional .env if running locally
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except Exception:
-    pass
-
+# ──────────────────────────────────────────
+# Config
+# ──────────────────────────────────────────
 CHROMA_DIR         = os.environ.get("CHROMA_DIR", "chroma_db")
-
-# Ollama (LLM)
 OLLAMA_BASE_URL    = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL       = os.environ.get("OLLAMA_MODEL", "llama3.1:8b-instruct")  # e.g. qwen2:7b-instruct, phi3:mini
+OLLAMA_MODEL       = os.environ.get("OLLAMA_MODEL", "llama3.1:8b-instruct")
 OLLAMA_TEMPERATURE = float(os.environ.get("OLLAMA_TEMPERATURE", "0.2"))
 
-# Embeddings (choose Ollama OR HuggingFace tiny model)
-EMBED_BACKEND      = os.environ.get("EMBED_BACKEND", "hf")  # "ollama" or "hf"
-OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")  # if using EMBED_BACKEND=ollama
+EMBED_BACKEND      = os.environ.get("EMBED_BACKEND", "hf")  # "hf" or "ollama"
+OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 HF_EMBED_MODEL     = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 
 app = FastAPI(title="Nigerian Food Recommender API")
 
-# CORS (you can lock this down later)
+# ──────────  ✅  CORS (from working server) ──────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # keep permissive while testing
-    allow_credentials=False,
+    allow_origins=["*"],          # or ["https://your-netlify-site.netlify.app"]
+    allow_credentials=False,      # keep False when using "*"
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
 
-# Debug log for every request
+# Log every request (helps debug CORS / preflight)
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     resp = await call_next(request)
     print(f"{request.method} {request.url.path} -> {resp.status_code}")
     return resp
 
-# ────────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────
 # LLM + Retrieval Setup
-# ────────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────
 qa_chain = None
 
 def build_llm():
-    """Create a ChatOllama client (open-source, local/remote)."""
     try:
         llm = ChatOllama(
             model=OLLAMA_MODEL,
             base_url=OLLAMA_BASE_URL,
             temperature=OLLAMA_TEMPERATURE,
-            # num_ctx etc. can be set via kwargs if needed
         )
-        # smoke test (non-fatal)
-        try:
-            _ = llm.invoke("ping")  # this will be very quick
-        except Exception as e:
-            print(f"Ollama reachable but ping failed (continuing): {e}")
         return llm
     except Exception as e:
         print(f"LLM init failed: {e}\n{format_exc()}")
@@ -81,50 +63,32 @@ def build_llm():
 LLM = build_llm()
 
 def chroma_present(path: str) -> bool:
+    import os
     if not os.path.isdir(path):
         return False
     files = set(os.listdir(path))
-    if not files:
-        return False
-    if any(f.endswith(".sqlite3") or f == "chroma.sqlite3" for f in files):
-        return True
-    return any(os.path.isdir(os.path.join(path, d)) for d in files)
+    return bool(files)
 
 def build_embeddings():
-    """Pick an embedding backend (Ollama or HuggingFace)."""
     try:
         if EMBED_BACKEND.lower() == "ollama":
-            print(f"Using OllamaEmbeddings: {OLLAMA_EMBED_MODEL}")
-            return OllamaEmbeddings(
-                model=OLLAMA_EMBED_MODEL,
-                base_url=OLLAMA_BASE_URL
-            )
+            return OllamaEmbeddings(model=OLLAMA_EMBED_MODEL, base_url=OLLAMA_BASE_URL)
         else:
-            # tiny, CPU-friendly, widely available
-            print(f"Using HF Embeddings: {HF_EMBED_MODEL}")
             return HuggingFaceEmbeddings(model_name=HF_EMBED_MODEL)
     except Exception as e:
         print(f"Embeddings init failed: {e}\n{format_exc()}")
         return None
 
 def get_chain():
-    """Return RetrievalQA if embeddings/Chroma are ready; else None."""
     global qa_chain
     if qa_chain:
         return qa_chain
     try:
-        if not LLM:
-            print("No LLM; retrieval disabled.")
+        if not LLM or not chroma_present(CHROMA_DIR):
             return None
-        if not chroma_present(CHROMA_DIR):
-            print(f"No valid Chroma store in '{CHROMA_DIR}'. Using LLM-only.")
-            return None
-
         emb = build_embeddings()
         if not emb:
-            print("Embeddings not available; using LLM-only.")
             return None
-
         vectordb = Chroma(
             collection_name="knowledge_base",
             embedding_function=emb,
@@ -136,15 +100,11 @@ def get_chain():
             retriever=vectordb.as_retriever(search_kwargs={"k": 4}),
             return_source_documents=True,
         )
-        print("RetrievalQA ready.")
         return qa_chain
     except Exception as e:
         print(f"Retrieval init failed: {e}\n{format_exc()}")
         return None
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Helpers & Mock
-# ────────────────────────────────────────────────────────────────────────────────
 def get_mock_response(question: str) -> Dict[str, Any]:
     q = question.lower()
     if "jollof" in q:
@@ -161,8 +121,7 @@ def llm_only_answer(question: str) -> str:
             "You are a friendly Nigerian food assistant. Be concise and practical.\n\n"
             f"Question: {question}\nAnswer:"
         )
-        msg = LLM.invoke(prompt)  # ChatOllama accepts raw strings
-        # ChatOllama returns str or AIMessage; handle both
+        msg = LLM.invoke(prompt)
         return getattr(msg, "content", msg) or get_mock_response(question)["result"]
     except Exception as e:
         print(f"[llm_only] Error: {e}\n{format_exc()}")
@@ -171,9 +130,9 @@ def llm_only_answer(question: str) -> str:
 class AskRequest(BaseModel):
     question: str
 
-# ────────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────
 # Routes
-# ────────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────
 @app.get("/")
 async def root():
     return {"message": "Nigerian Food Recommender API is running!"}
@@ -189,6 +148,7 @@ async def health_check():
         "ollama_base_url": OLLAMA_BASE_URL,
     }
 
+# ✅ Explicit OPTIONS route for preflight
 @app.options("/ask")
 async def ask_options():
     return {"message": "CORS preflight OK"}
@@ -214,10 +174,7 @@ async def ask(request: AskRequest) -> Dict[str, Any]:
             if not answer:
                 answer = llm_only_answer(request.question)
             return {"answer": answer, "sources": sources}
-
-        # Fallback: LLM only
         return {"answer": llm_only_answer(request.question), "sources": []}
-
     except Exception as e:
         print(f"[/ask] Error: {e}\n{format_exc()}")
         fallback = get_mock_response(request.question)
