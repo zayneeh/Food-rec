@@ -1,46 +1,35 @@
 import os
 from traceback import format_exc
 from typing import Dict, Any, List, Tuple
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.requests import Request
-
-# Chroma (vector store)
 from langchain_community.vectorstores import Chroma
-
-# Hugging Face (LLM + hosted embeddings)
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
 
-
-# ──────────────────────────────────────────
-# Config (via env, with sensible defaults)
-# ──────────────────────────────────────────
-CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")  # keep inside image on Render free
-
-# HF Inference API (all open-source)
-HF_TOKEN = os.environ.get("HF_TOKEN", "")  # REQUIRED: set in Render env
+CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")  
+# HF Inference API 
+HF_TOKEN = os.environ.get("HF_TOKEN", "")  
 HF_MODEL = os.environ.get("HF_MODEL", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")
 HF_EMBED_MODEL = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 HF_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.2"))
 HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "512"))
+HF_TASK = os.environ.get("HF_TASK", "text-generation")
 
 # Retrieval strictness + guardrail
 RELEVANCE_THRESHOLD = float(os.environ.get("RELEVANCE_THRESHOLD", "0.35"))
 NOT_FOUND_TEXT = "This item is not in our database."
 
 
-# ──────────────────────────────────────────
-# FastAPI + CORS
-# ──────────────────────────────────────────
+
 app = FastAPI(title="Nigerian Food Recommender API")
 
 # ⚠️ CORS block kept EXACTLY as you had it
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # tighten later if you want
+    allow_origins=["*"],            
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -66,21 +55,25 @@ def _ensure_hf_env():
         raise RuntimeError("HF_TOKEN env var is missing.")
     os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN  # what HF libs expect
 
+
 def build_llm():
     try:
-        _ensure_hf_env()
+        if not HF_TOKEN:
+            raise RuntimeError("HF_TOKEN env var is missing.")
+        os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
         llm = HuggingFaceEndpoint(
             repo_id=HF_MODEL,
-            task="text-generation",
+            task=HF_TASK,  # <-- use env to pick 'conversational'
             temperature=HF_TEMPERATURE,
             max_new_tokens=HF_MAX_NEW_TOKENS,
         )
-        _ = llm.invoke("ping")  # quick sanity check
-        print(f"LLM ready: {HF_MODEL}")
+        _ = llm.invoke("ping")
+        print(f"LLM ready: {HF_MODEL} (task={HF_TASK})")
         return llm
     except Exception as e:
         print(f"LLM init failed: {e}\n{format_exc()}")
         return None
+
 
 def build_embeddings():
     try:
