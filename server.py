@@ -8,6 +8,8 @@ from pydantic import BaseModel
 
 from dotenv import load_dotenv
 from starlette.requests import Request
+import json
+from google.oauth2 import service_account
 
 from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -21,7 +23,22 @@ load_dotenv()  # load .env when running locally
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID") or os.environ.get("GCP_PROJECT")
 LOCATION   = os.environ.get("GCP_LOCATION", "us-central1")
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
-SA_KEY     = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")  # optional
+
+# Handle Google Cloud credentials properly
+credentials = None
+creds_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+if creds_json:
+    try:
+        # If it's a file path
+        if os.path.isfile(creds_json):
+            credentials = service_account.Credentials.from_service_account_file(creds_json)
+        else:
+            # If it's JSON content
+            creds_info = json.loads(creds_json)
+            credentials = service_account.Credentials.from_service_account_info(creds_info)
+    except Exception as e:
+        print(f"Failed to load credentials: {e}")
+        credentials = None
 
 app = FastAPI(title="Nigerian Food Recommender API")
 
@@ -54,6 +71,7 @@ def build_llm():
             project=PROJECT_ID,
             location=LOCATION,
             temperature=0.2,
+            credentials=credentials,  # Pass credentials explicitly
         )
     except Exception as e:
         print(f"LLM init failed: {e}\n{format_exc()}")
@@ -89,6 +107,7 @@ def get_chain():
                 project=PROJECT_ID,
                 location=LOCATION,
                 model_name="text-embedding-004",
+                credentials=credentials,  # Pass credentials explicitly
             )
         except Exception as e:
             print(f"Embeddings init failed: {e}\n{format_exc()}")
@@ -153,7 +172,8 @@ async def health_check():
         "project": PROJECT_ID,
         "location": LOCATION,
         "chroma_present": chroma_present(CHROMA_DIR),
-        "google_creds_set": bool(SA_KEY),
+        "allowed_origins": ["*"],  # Show wildcard since we're using it
+        "google_creds_set": bool(credentials),
         "llm_initialized": bool(LLM),
     }
 
