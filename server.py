@@ -58,23 +58,21 @@ async def log_requests(request: Request, call_next):
 # ──────────────────────────────────────────
 def build_llm():
     try:
-        if not HF_TOKEN:
+        if not os.getenv("HF_TOKEN"):
             raise RuntimeError("HF_TOKEN is missing; set it in Render env.")
         llm = HuggingFaceEndpoint(
-            repo_id=HF_MODEL,              # open-source model id
-            task="text-generation",        # works for chat-style prompts too
+            repo_id=HF_MODEL,
+            task="text-generation",
             temperature=HF_TEMPERATURE,
             max_new_tokens=HF_MAX_NEW_TOKENS,
-            huggingface_api_key=HF_TOKEN,
-            stop_sequences=None,
         )
-        # quick ping
         _ = llm.invoke("ping")
         print(f"LLM ready: {HF_MODEL}")
         return llm
     except Exception as e:
         print(f"LLM init failed: {e}\n{format_exc()}")
         return None
+
 
 def build_embeddings():
     try:
