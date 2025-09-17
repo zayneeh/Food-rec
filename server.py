@@ -23,44 +23,6 @@ LOCATION   = os.environ.get("GCP_LOCATION", "us-central1")
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
 SA_KEY     = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")  # optional
 
-# … imports and load_dotenv() unchanged …
-
-SA_KEY = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")  # may be None
-INLINE_KEY = os.environ.get("GCP_SA_KEY")                  # optional: inline JSON
-
-# If an inline JSON key is provided, write it to a temp file and point GA_C to it
-if not SA_KEY and INLINE_KEY:
-    import tempfile, json
-    try:
-        # Validate it's JSON
-        json.loads(INLINE_KEY)
-        f = tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w")
-        f.write(INLINE_KEY)
-        f.close()
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f.name
-        SA_KEY = f.name
-        print("Loaded inline GCP SA key into a temp file.")
-    except Exception as e:
-        print(f"Inline GCP key invalid: {e}")
-
-def build_llm():
-    # ⬇️ Key change: if there’s no service-account key, skip creating the LLM
-    if not SA_KEY:
-        print("No GOOGLE_APPLICATION_CREDENTIALS; LLM disabled (mock/LLM-off).")
-        return None
-    try:
-        from langchain_google_vertexai import ChatVertexAI
-        return ChatVertexAI(
-            model="gemini-1.5-flash",
-            project=PROJECT_ID,
-            location=LOCATION,
-            temperature=0.2,
-        )
-    except Exception as e:
-        print(f"LLM init failed: {e}\n{format_exc()}")
-        return None
-
-
 app = FastAPI(title="Nigerian Food Recommender API")
 
 # *** TEMP: exact origin allow-list to guarantee preflight success ***
@@ -87,6 +49,17 @@ async def log_requests(request: Request, call_next):
 # ────────────────────────────────────────────────────────────────────────────────
 qa_chain = None
 
+def build_llm():
+    try:
+        return ChatVertexAI(
+            model="gemini-1.5-flash",
+            project=PROJECT_ID,
+            location=LOCATION,
+            temperature=0.2,
+        )
+    except Exception as e:
+        print(f"LLM init failed: {e}\n{format_exc()}")
+        return None
 
 LLM = build_llm()
 
