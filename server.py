@@ -71,36 +71,62 @@ def _try_make_llm(task: str):
         max_new_tokens=HF_MAX_NEW_TOKENS,
     )
 
+# Add this at the top of server.py after imports
+
+# Model-specific task mappings
+MODEL_TASK_MAP = {
+    "meta-llama/Llama-3.2-3B-Instruct": ["conversational"],
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0": ["text-generation", "conversational"],
+    # Add more models as needed
+}
+
+def get_supported_tasks(model_id: str) -> List[str]:
+    """Get supported tasks for a specific model."""
+    return MODEL_TASK_MAP.get(model_id, ["conversational", "text-generation"])
+
 def build_llm():
-    """Try requested task first, then auto-fallback to the other task."""
+    """Try supported tasks for the specific model."""
     global LLM_TASK_CHOSEN, LAST_LLM_ERROR
     try:
         _ensure_hf_env()
 
-        # Try your requested task first; then the alternative.
-        candidates = [HF_TASK]
-        if HF_TASK != "conversational":
-            candidates.append("conversational")
-        if HF_TASK != "text-generation":
-            candidates.append("text-generation")
+        # Get supported tasks for this model
+        supported_tasks = get_supported_tasks(HF_MODEL)
+        
+        # Try requested task first if it's supported
+        candidates = []
+        if HF_TASK in supported_tasks:
+            candidates.append(HF_TASK)
+        
+        # Add other supported tasks
+        for task in supported_tasks:
+            if task not in candidates:
+                candidates.append(task)
 
-        tried = set()
+        print(f"[LLM] Model {HF_MODEL} supports tasks: {supported_tasks}")
+        print(f"[LLM] Will try tasks in order: {candidates}")
+
         for task in candidates:
-            if task in tried:
-                continue
-            tried.add(task)
             try:
+                print(f"[LLM] Trying task={task}")
                 llm = _try_make_llm(task)
-                _ = llm.invoke("ping")  # quick sanity check
+                
+                # Test with a simple prompt
+                test_response = llm.invoke("Hi")
+                print(f"[LLM] Task {task} working successfully")
+                
                 LLM_TASK_CHOSEN = task
                 LAST_LLM_ERROR = None
                 print(f"LLM ready: {HF_MODEL} (task={task})")
                 return llm
+                
             except Exception as e:
-                LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
-                print(f"[LLM attempt task={task}] failed: {LAST_LLM_ERROR}")
+                error_msg = f"{type(e).__name__}: {e}"
+                LAST_LLM_ERROR = error_msg
+                print(f"[LLM] Task {task} failed: {error_msg}")
+                continue
 
-        print("All LLM task attempts failed.")
+        print("All supported tasks failed for this model.")
         return None
 
     except Exception as e:
