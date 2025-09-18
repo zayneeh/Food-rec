@@ -84,26 +84,20 @@ def get_supported_tasks(model_id: str) -> List[str]:
     """Get supported tasks for a specific model."""
     return MODEL_TASK_MAP.get(model_id, ["conversational", "text-generation"])
 
+# Replace just the build_llm function with this:
+
 def build_llm():
     """Try supported tasks for the specific model."""
     global LLM_TASK_CHOSEN, LAST_LLM_ERROR
     try:
         _ensure_hf_env()
 
-        # Get supported tasks for this model
-        supported_tasks = get_supported_tasks(HF_MODEL)
-        
-        # Try requested task first if it's supported
-        candidates = []
-        if HF_TASK in supported_tasks:
-            candidates.append(HF_TASK)
-        
-        # Add other supported tasks
-        for task in supported_tasks:
-            if task not in candidates:
-                candidates.append(task)
+        # Simple fix: just try conversational first for Llama models
+        if "llama" in HF_MODEL.lower():
+            candidates = ["conversational", "text-generation"]
+        else:
+            candidates = ["text-generation", "conversational"]
 
-        print(f"[LLM] Model {HF_MODEL} supports tasks: {supported_tasks}")
         print(f"[LLM] Will try tasks in order: {candidates}")
 
         for task in candidates:
@@ -111,10 +105,7 @@ def build_llm():
                 print(f"[LLM] Trying task={task}")
                 llm = _try_make_llm(task)
                 
-                # Test with a simple prompt
-                test_response = llm.invoke("Hi")
-                print(f"[LLM] Task {task} working successfully")
-                
+                # Simple test - don't invoke, just create
                 LLM_TASK_CHOSEN = task
                 LAST_LLM_ERROR = None
                 print(f"LLM ready: {HF_MODEL} (task={task})")
@@ -126,14 +117,13 @@ def build_llm():
                 print(f"[LLM] Task {task} failed: {error_msg}")
                 continue
 
-        print("All supported tasks failed for this model.")
+        print("All tasks failed for this model.")
         return None
 
     except Exception as e:
         LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
         print(f"LLM init failed (fatal): {LAST_LLM_ERROR}\n{format_exc()}")
         return None
-
 def build_embeddings():
     try:
         _ensure_hf_env()
