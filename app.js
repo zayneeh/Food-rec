@@ -48,7 +48,7 @@ async function askAPI(question) {
   if (!window.RECO_API_BASE) throw new Error('API URL not configured');
 
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 15000);
+  const timer = setTimeout(() => ctrl.abort(), 45000);
 
   try {
     const res = await fetch(window.RECO_API_BASE, {
