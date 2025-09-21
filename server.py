@@ -71,8 +71,6 @@ def _try_make_llm(task: str):
         max_new_tokens=HF_MAX_NEW_TOKENS,
     )
 
-# Add this at the top of server.py after imports
-
 # Model-specific task mappings
 MODEL_TASK_MAP = {
     "meta-llama/Llama-3.2-3B-Instruct": ["conversational"],
@@ -83,8 +81,6 @@ MODEL_TASK_MAP = {
 def get_supported_tasks(model_id: str) -> List[str]:
     """Get supported tasks for a specific model."""
     return MODEL_TASK_MAP.get(model_id, ["conversational", "text-generation"])
-
-# Replace just the build_llm function with this:
 
 def build_llm():
     """Try supported tasks for the specific model."""
@@ -124,6 +120,7 @@ def build_llm():
         LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
         print(f"LLM init failed (fatal): {LAST_LLM_ERROR}\n{format_exc()}")
         return None
+
 def build_embeddings():
     try:
         _ensure_hf_env()
@@ -150,7 +147,7 @@ if EMB and chroma_present(CHROMA_DIR):
         print(f"Chroma load failed: {e}\n{format_exc()}")
 
 # ──────────────────────────────────────────
-# Retrieval helpers (strict, no fabrication)
+# Retrieval helpers
 # ──────────────────────────────────────────
 def format_sources(docs) -> List[Dict[str, Any]]:
     out = []
@@ -166,9 +163,8 @@ def format_sources(docs) -> List[Dict[str, Any]]:
 
 def build_prompt(context: str, question: str) -> str:
     return (
-        "You are a precise Nigerian food assistant.\n"
-        "Use ONLY the context below to answer. Do not invent recipes or facts.\n"
-        f"If the answer isn't fully supported by the context, reply exactly: {NOT_FOUND_TEXT}\n\n"
+        "You are a helpful Nigerian food assistant. Answer questions about Nigerian cuisine.\n"
+        f"If you have context below, use it to answer. If not, respond naturally as a helpful assistant.\n\n"
         "=== CONTEXT START ===\n"
         f"{context}\n"
         "=== CONTEXT END ===\n\n"
@@ -190,28 +186,33 @@ def retrieve_with_scores(query: str, k: int = 4) -> List[Tuple[Any, float]]:
             return []
 
 def answer_from_context(question: str) -> Dict[str, Any]:
-    # If either LLM or VDB is unavailable, never fabricate
-    if not (LLM and VDB):
+    # If LLM not available, can't answer anything
+    if not LLM:
         return {"answer": NOT_FOUND_TEXT, "sources": []}
 
-    pairs = retrieve_with_scores(question, k=4)
-    kept = [(d, s) for (d, s) in pairs if s is not None and s >= RELEVANCE_THRESHOLD]
-    if not kept:
-        return {"answer": NOT_FOUND_TEXT, "sources": []}
+    # Try to get relevant docs
+    context = ""
+    sources = []
+    if VDB:
+        pairs = retrieve_with_scores(question, k=4)
+        kept = [(d, s) for (d, s) in pairs if s is not None and s >= RELEVANCE_THRESHOLD]
+        if kept:
+            docs = [d for d, _ in kept]
+            context = "\n\n---\n\n".join(d.page_content for d in docs)
+            sources = format_sources(docs)
 
-    docs = [d for d, _ in kept]
-    context = "\n\n---\n\n".join(d.page_content for d in docs)
+    # Always let the LLM respond, with or without context
     prompt = build_prompt(context, question)
 
     try:
         content = LLM.invoke(prompt) or ""
         text = (getattr(content, "content", content) or "").strip()
-        if not text or NOT_FOUND_TEXT.lower() in text.lower():
-            return {"answer": NOT_FOUND_TEXT, "sources": format_sources(docs)}
-        return {"answer": text, "sources": format_sources(docs)}
+        if not text:
+            return {"answer": "I'm sorry, I couldn't generate a response.", "sources": sources}
+        return {"answer": text, "sources": sources}
     except Exception as e:
         print(f"LLM invoke error: {e}\n{format_exc()}")
-        return {"answer": NOT_FOUND_TEXT, "sources": format_sources(docs)}
+        return {"answer": NOT_FOUND_TEXT, "sources": sources}
 
 # ──────────────────────────────────────────
 # API
