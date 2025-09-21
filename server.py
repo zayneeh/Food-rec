@@ -17,7 +17,7 @@ from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")  # REQUIRED
-HF_MODEL = os.environ.get("HF_MODEL", "microsoft/DialoGPT-medium")  # Changed to a more reliable model
+HF_MODEL = os.environ.get("HF_MODEL", "google/flan-t5-base")  # Much more reliable model
 HF_EMBED_MODEL = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 HF_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.7"))
 HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "256"))
@@ -67,24 +67,36 @@ def build_llm():
     try:
         _ensure_hf_env()
         
-        # Try with a simpler, more reliable configuration
+        # Use text2text-generation for Flan-T5 models, or try text-generation as fallback
         llm = HuggingFaceEndpoint(
             repo_id=HF_MODEL,
             temperature=HF_TEMPERATURE,
             max_new_tokens=HF_MAX_NEW_TOKENS,
-            repetition_penalty=1.1,
-            task="text-generation"
+            task="text2text-generation"  # Better for Flan-T5
         )
         
-        LLM_TASK_CHOSEN = "text-generation"
+        LLM_TASK_CHOSEN = "text2text-generation"
         LAST_LLM_ERROR = None
         print(f"LLM ready: {HF_MODEL}")
         return llm
         
     except Exception as e:
-        LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
-        print(f"LLM init failed: {LAST_LLM_ERROR}\n{format_exc()}")
-        return None
+        # Try with text-generation as fallback
+        try:
+            llm = HuggingFaceEndpoint(
+                repo_id=HF_MODEL,
+                temperature=HF_TEMPERATURE,
+                max_new_tokens=HF_MAX_NEW_TOKENS,
+                task="text-generation"
+            )
+            LLM_TASK_CHOSEN = "text-generation"
+            LAST_LLM_ERROR = None
+            print(f"LLM ready: {HF_MODEL} (fallback)")
+            return llm
+        except Exception as e2:
+            LAST_LLM_ERROR = f"{type(e2).__name__}: {e2}"
+            print(f"LLM init failed completely: {LAST_LLM_ERROR}")
+            return None
 
 def build_embeddings():
     try:
