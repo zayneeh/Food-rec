@@ -66,19 +66,35 @@ def build_llm():
     global LLM_TASK_CHOSEN, LAST_LLM_ERROR
     try:
         _ensure_hf_env()
-        
+
+        # Guard against conversational-only models that won't work with this wrapper
+        conversational_only = {
+            "microsoft/DialoGPT-small",
+            "microsoft/DialoGPT-medium",
+            "microsoft/DialoGPT-large",
+        }
+        if HF_MODEL in conversational_only:
+            raise RuntimeError(
+                f"{HF_MODEL} uses the 'conversational' pipeline and is incompatible with "
+                "LangChain's HuggingFaceEndpoint. Set HF_MODEL to a text-generation instruct model "
+                "(e.g., 'HuggingFaceH4/zephyr-7b-beta')."
+            )
+
         llm = HuggingFaceEndpoint(
             repo_id=HF_MODEL,
+            task="text-generation",              # <- force correct task
             temperature=HF_TEMPERATURE,
-            max_new_tokens=HF_MAX_NEW_TOKENS
-            # Let HF figure out the task automatically
+            max_new_tokens=HF_MAX_NEW_TOKENS,
+            timeout=60,                          # <- avoid spurious timeouts
+            max_retries=3,                       # <- basic retry for 429/5xx
+            model_kwargs={"return_full_text": False},
         )
-        
-        LLM_TASK_CHOSEN = "auto"
+
+        LLM_TASK_CHOSEN = "text-generation"
         LAST_LLM_ERROR = None
         print(f"LLM ready: {HF_MODEL}")
         return llm
-        
+
     except Exception as e:
         LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
         print(f"LLM init failed: {LAST_LLM_ERROR}")
