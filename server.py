@@ -61,33 +61,22 @@ def _ensure_hf_env():
         raise RuntimeError("HF_TOKEN env var is missing.")
     os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 
+from langchain_huggingface import HuggingFaceEndpoint
+
 def build_llm():
-    """Simple, working LLM setup."""
     global LLM_TASK_CHOSEN, LAST_LLM_ERROR
     try:
         _ensure_hf_env()
 
-        # Guard against conversational-only models that won't work with this wrapper
-        conversational_only = {
-            "microsoft/DialoGPT-small",
-            "microsoft/DialoGPT-medium",
-            "microsoft/DialoGPT-large",
-        }
-        if HF_MODEL in conversational_only:
-            raise RuntimeError(
-                f"{HF_MODEL} uses the 'conversational' pipeline and is incompatible with "
-                "LangChain's HuggingFaceEndpoint. Set HF_MODEL to a text-generation instruct model "
-                "(e.g., 'HuggingFaceH4/zephyr-7b-beta')."
-            )
-
         llm = HuggingFaceEndpoint(
             repo_id=HF_MODEL,
-            task="text-generation",              # <- force correct task
+            task="text-generation",      # important
             temperature=HF_TEMPERATURE,
             max_new_tokens=HF_MAX_NEW_TOKENS,
-            timeout=60,                          # <- avoid spurious timeouts
-            max_retries=3,                       # <- basic retry for 429/5xx
-            model_kwargs={"return_full_text": False},
+            timeout=60,
+            max_retries=3,
+            return_full_text=False       # <- move here (not in model_kwargs)
+            # model_kwargs={}            # <- remove or leave empty
         )
 
         LLM_TASK_CHOSEN = "text-generation"
@@ -99,6 +88,7 @@ def build_llm():
         LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
         print(f"LLM init failed: {LAST_LLM_ERROR}")
         return None
+
 
 def build_embeddings():
     try:
