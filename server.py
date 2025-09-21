@@ -145,73 +145,46 @@ def retrieve_with_scores(query: str, k: int = 4) -> List[Tuple[Any, float]]:
             print(f"Retrieval error: {e}\n{format_exc()}")
             return []
 
-def needs_database_search(question: str) -> bool:
-    """Check if question needs database lookup for recipes/ingredients."""
-    q_lower = question.lower()
-    
-    # Recipe/cooking keywords that need database
-    recipe_keywords = [
-        'recipe', 'cook', 'make', 'prepare', 'ingredient', 'how to cook',
-        'how to make', 'how to prepare', 'steps', 'procedure', 'cooking method'
-    ]
-    
-    # Greetings and casual conversation - no database needed
-    casual_keywords = [
-        'hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening',
-        'how are you', 'whats up', 'what\'s up', 'thanks', 'thank you', 
-        'bye', 'goodbye', 'ok', 'okay', 'cool', 'nice', 'great'
-    ]
-    
-    # If it's clearly casual, no database needed
-    if any(word in q_lower for word in casual_keywords) and not any(word in q_lower for word in recipe_keywords):
-        return False
-    
-    # If asking for recipes/cooking info, use database
-    if any(word in q_lower for word in recipe_keywords):
-        return True
-    
-    # Food names that might need database lookup
-    nigerian_foods = [
-        'jollof', 'egusi', 'amala', 'pounded yam', 'fufu', 'pepper soup',
-        'suya', 'akara', 'moi moi', 'plantain', 'okra', 'bitter leaf'
-    ]
-    
-    # If asking about specific Nigerian foods, use database
-    return any(food in q_lower for food in nigerian_foods)
-
 def answer_from_context(question: str) -> Dict[str, Any]:
     # If LLM not available, provide basic fallback
     if not LLM:
         return {"answer": "I'm sorry, the assistant is temporarily unavailable.", "sources": []}
 
-    # Decide if we need database search
-    use_database = needs_database_search(question)
-    
+    # Always try to get context from database - let LLM decide if it's useful
     context = ""
     sources = []
-    
-    # Only search database if question needs it
-    if use_database and VDB:
+    if VDB:
         try:
             pairs = retrieve_with_scores(question, k=4)
-            # Fix the relevance score warning by filtering properly
+            # Fix the relevance score warning by filtering properly  
             kept = [(d, abs(s)) for (d, s) in pairs if s is not None and abs(s) >= RELEVANCE_THRESHOLD]
             if kept:
                 docs = [d for d, _ in kept]
-                context = "\n\n".join(d.page_content[:500] for d in docs)  # Limit context length
+                context = "\n\n".join(d.page_content[:500] for d in docs)
                 sources = format_sources(docs)
         except Exception as e:
             print(f"Context retrieval failed: {e}")
 
-    # Create a simple prompt
-    prompt = build_simple_prompt(context, question)
+    # Create prompt - LLM decides whether to use context or not
+    if context:
+        prompt = f"""You are a helpful Nigerian food assistant. You can have normal conversations and also help with Nigerian food questions.
+
+Here's some information from my database that might be relevant:
+{context}
+
+Question: {question}
+Answer (use the database info only if it's actually helpful for this question):"""
+    else:
+        prompt = f"""You are a helpful Nigerian food assistant. You can have normal conversations and also help with Nigerian food questions.
+
+Question: {question}  
+Answer:"""
     
-    # Limit prompt length to avoid issues
+    # Limit prompt length
     if len(prompt) > 2000:
         prompt = prompt[:2000] + "..."
 
     try:
-        print(f"Invoking LLM with prompt length: {len(prompt)}")
         response = LLM.invoke(prompt)
         
         if hasattr(response, 'content'):
@@ -222,16 +195,18 @@ def answer_from_context(question: str) -> Dict[str, Any]:
             text = str(response).strip()
             
         if not text:
-            return {"answer": "I couldn't generate a response. Please try rephrasing your question.", "sources": sources}
+            return {"answer": "I couldn't generate a response. Please try rephrasing your question.", "sources": []}
             
-        return {"answer": text, "sources": sources}
+        # Only include sources if the LLM response seems to be using recipe/food info
+        # Simple heuristic: if response is long or mentions ingredients/steps, include sources
+        if sources and (len(text) > 100 or any(word in text.lower() for word in ['ingredient', 'cook', 'recipe', 'step', 'add', 'heat'])):
+            return {"answer": text, "sources": sources}
+        else:
+            return {"answer": text, "sources": []}
         
     except Exception as e:
         print(f"LLM invoke error: {e}\n{format_exc()}")
-        # Provide a helpful fallback response
-        if any(word in question.lower() for word in ['hi', 'hello', 'hey']):
-            return {"answer": "Hello! I'm here to help with Nigerian food questions. What would you like to know?", "sources": []}
-        return {"answer": NOT_FOUND_TEXT, "sources": sources}
+        return {"answer": "I'm having trouble generating a response right now. Please try again.", "sources": []}
 
 # ──────────────────────────────────────────
 # API
