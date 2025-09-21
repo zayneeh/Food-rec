@@ -145,15 +145,53 @@ def retrieve_with_scores(query: str, k: int = 4) -> List[Tuple[Any, float]]:
             print(f"Retrieval error: {e}\n{format_exc()}")
             return []
 
+def needs_database_search(question: str) -> bool:
+    """Check if question needs database lookup for recipes/ingredients."""
+    q_lower = question.lower()
+    
+    # Recipe/cooking keywords that need database
+    recipe_keywords = [
+        'recipe', 'cook', 'make', 'prepare', 'ingredient', 'how to cook',
+        'how to make', 'how to prepare', 'steps', 'procedure', 'cooking method'
+    ]
+    
+    # Greetings and casual conversation - no database needed
+    casual_keywords = [
+        'hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening',
+        'how are you', 'whats up', 'what\'s up', 'thanks', 'thank you', 
+        'bye', 'goodbye', 'ok', 'okay', 'cool', 'nice', 'great'
+    ]
+    
+    # If it's clearly casual, no database needed
+    if any(word in q_lower for word in casual_keywords) and not any(word in q_lower for word in recipe_keywords):
+        return False
+    
+    # If asking for recipes/cooking info, use database
+    if any(word in q_lower for word in recipe_keywords):
+        return True
+    
+    # Food names that might need database lookup
+    nigerian_foods = [
+        'jollof', 'egusi', 'amala', 'pounded yam', 'fufu', 'pepper soup',
+        'suya', 'akara', 'moi moi', 'plantain', 'okra', 'bitter leaf'
+    ]
+    
+    # If asking about specific Nigerian foods, use database
+    return any(food in q_lower for food in nigerian_foods)
+
 def answer_from_context(question: str) -> Dict[str, Any]:
     # If LLM not available, provide basic fallback
     if not LLM:
         return {"answer": "I'm sorry, the assistant is temporarily unavailable.", "sources": []}
 
-    # Try to get relevant docs
+    # Decide if we need database search
+    use_database = needs_database_search(question)
+    
     context = ""
     sources = []
-    if VDB:
+    
+    # Only search database if question needs it
+    if use_database and VDB:
         try:
             pairs = retrieve_with_scores(question, k=4)
             # Fix the relevance score warning by filtering properly
