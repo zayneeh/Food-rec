@@ -1,23 +1,18 @@
 import os
 from traceback import format_exc
 from typing import Dict, Any, List, Tuple
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.requests import Request
-
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
 
-# ──────────────────────────────────────────
-# Config (env)
-# ──────────────────────────────────────────
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
 
-HF_TOKEN = os.environ.get("HF_TOKEN", "")  # REQUIRED
-HF_MODEL = os.environ.get("HF_MODEL", "openai-community/gpt2")  # Simple, always works
+HF_TOKEN = os.environ.get("HF_TOKEN", "")  
+HF_MODEL = os.environ.get("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")  
 HF_EMBED_MODEL = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 HF_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.7"))
 HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "100"))
@@ -25,13 +20,10 @@ HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "100"))
 RELEVANCE_THRESHOLD = float(os.environ.get("RELEVANCE_THRESHOLD", "0.35"))
 NOT_FOUND_TEXT = "I don't have specific information about that in my database."
 
-# Track actual task chosen + last init error (visible in /health)
+
 LLM_TASK_CHOSEN: str | None = None
 LAST_LLM_ERROR: str | None = None
 
-# ──────────────────────────────────────────
-# FastAPI + CORS  (UNCHANGED)
-# ──────────────────────────────────────────
 app = FastAPI(title="Nigerian Food Recommender API")
 
 app.add_middleware(
@@ -68,12 +60,15 @@ def build_llm():
 
         llm = HuggingFaceEndpoint(
             repo_id=HF_MODEL,
+            task="text-generation",         
             temperature=HF_TEMPERATURE,
             max_new_tokens=HF_MAX_NEW_TOKENS,
-            timeout=30
+            timeout=60,
+            max_retries=3,
+            return_full_text=False         
         )
 
-        LLM_TASK_CHOSEN = "auto"
+        LLM_TASK_CHOSEN = "text-generation"
         LAST_LLM_ERROR = None
         print(f"LLM ready: {HF_MODEL}")
         return llm
@@ -82,6 +77,7 @@ def build_llm():
         LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
         print(f"LLM init failed: {LAST_LLM_ERROR}")
         return None
+
 
 def build_embeddings():
     try:
