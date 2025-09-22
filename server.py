@@ -8,9 +8,8 @@ from starlette.requests import Request
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
-import warnings
 from langchain_huggingface import ChatHuggingFace
-
+import warnings
 
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
 
@@ -55,46 +54,110 @@ def _ensure_hf_env():
         raise RuntimeError("HF_TOKEN env var is missing.")
     os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 
-
-
 def build_llm():
     global LLM_TASK_CHOSEN, LAST_LLM_ERROR
     try:
         _ensure_hf_env()
-
-        # Use ChatHuggingFace instead of HuggingFaceEndpoint
-        llm = ChatHuggingFace(
-            repo_id=HF_MODEL,
-            task="conversational",
-            temperature=HF_TEMPERATURE,
-            max_new_tokens=HF_MAX_NEW_TOKENS,
-            timeout=60,
-        )
-
-        LLM_TASK_CHOSEN = "conversational"
-        LAST_LLM_ERROR = None
-        print(f"LLM ready: {HF_MODEL} with ChatHuggingFace")
-        return llm
+        
+        # Try different approaches for Qwen
+        print(f"Attempting to initialize {HF_MODEL}...")
+        
+        # Method 1: Try with text-generation task explicitly
+        try:
+            base_llm = HuggingFaceEndpoint(
+                repo_id=HF_MODEL,
+                task="text-generation",  # Explicit text-generation for Qwen
+                temperature=HF_TEMPERATURE,
+                max_new_tokens=HF_MAX_NEW_TOKENS,
+                timeout=60,
+                model_kwargs={
+                    "max_length": HF_MAX_NEW_TOKENS,
+                    "temperature": HF_TEMPERATURE,
+                }
+            )
+            
+            # Test the base LLM first
+            test_response = base_llm.invoke("Hello")
+            print(f"Base LLM test successful: {test_response[:50]}...")
+            
+            # Wrap with ChatHuggingFace
+            llm = ChatHuggingFace(llm=base_llm)
+            
+            LLM_TASK_CHOSEN = "text-generation + chat wrapper"
+            LAST_LLM_ERROR = None
+            print(f"LLM ready: {HF_MODEL} with text-generation task")
+            return llm
+            
+        except Exception as e1:
+            print(f"Method 1 failed: {e1}")
+            
+            # Method 2: Try without explicit task
+            try:
+                base_llm = HuggingFaceEndpoint(
+                    repo_id=HF_MODEL,
+                    temperature=HF_TEMPERATURE,
+                    max_new_tokens=HF_MAX_NEW_TOKENS,
+                    timeout=60,
+                )
+                
+                llm = ChatHuggingFace(llm=base_llm)
+                
+                LLM_TASK_CHOSEN = "auto-detect + chat wrapper"
+                LAST_LLM_ERROR = None
+                print(f"LLM ready: {HF_MODEL} with auto-detected task")
+                return llm
+                
+            except Exception as e2:
+                print(f"Method 2 failed: {e2}")
+                
+                # Method 3: Try just the base endpoint without chat wrapper
+                try:
+                    llm = HuggingFaceEndpoint(
+                        repo_id=HF_MODEL,
+                        task="text-generation",
+                        temperature=HF_TEMPERATURE,
+                        max_new_tokens=HF_MAX_NEW_TOKENS,
+                        timeout=60,
+                    )
+                    
+                    LLM_TASK_CHOSEN = "text-generation only"
+                    LAST_LLM_ERROR = None
+                    print(f"LLM ready: {HF_MODEL} with text-generation (no chat wrapper)")
+                    return llm
+                    
+                except Exception as e3:
+                    raise Exception(f"All methods failed. Method 1: {e1}, Method 2: {e2}, Method 3: {e3}")
 
     except Exception as e:
         LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
         print(f"LLM init failed: {LAST_LLM_ERROR}")
+        print(f"Full traceback: {format_exc()}")
         return None
     
 def build_embeddings():
     try:
         _ensure_hf_env()
-        emb = HuggingFaceEndpointEmbeddings(model=HF_EMBED_MODEL)
+        emb = HuggingFaceEndpointEmbeddings(
+            model=HF_EMBED_MODEL,
+            timeout=30
+        )
         print(f"Embeddings ready: {HF_EMBED_MODEL}")
+        
+        # Test embeddings
+        test_embed = emb.embed_query("test")
+        print(f"Embeddings test successful, dimension: {len(test_embed)}")
         return emb
+        
     except Exception as e:
         print(f"Embeddings init failed: {e}\n{format_exc()}")
         return None
 
 # Build once at startup
+print("Initializing components...")
 LLM = build_llm()
 EMB = build_embeddings()
 VDB = None
+
 if EMB and chroma_present(CHROMA_DIR):
     try:
         VDB = Chroma(
@@ -102,9 +165,23 @@ if EMB and chroma_present(CHROMA_DIR):
             embedding_function=EMB,
             persist_directory=CHROMA_DIR,
         )
-        print("Chroma loaded.")
+        # Test if the database actually works
+        try:
+            test_count = VDB._collection.count()
+            print(f"Chroma loaded with {test_count} documents.")
+        except:
+            # Fallback count method
+            test_docs = VDB.similarity_search("test", k=1)
+            print(f"Chroma loaded successfully.")
+            
     except Exception as e:
         print(f"Chroma load failed: {e}\n{format_exc()}")
+        VDB = None
+else:
+    if not EMB:
+        print("Skipping Chroma - embeddings not available")
+    if not chroma_present(CHROMA_DIR):
+        print(f"Skipping Chroma - directory {CHROMA_DIR} not present or empty")
 
 # ──────────────────────────────────────────
 # Retrieval helpers
@@ -125,33 +202,25 @@ def retrieve_with_scores(query: str, k: int = 4) -> List[Tuple[Any, float]]:
     if not VDB:
         return []
     try:
-        # Try the primary method first
         results = VDB.similarity_search_with_relevance_scores(query, k=k)
-        
-        # Normalize scores to be between 0 and 1
-        normalized_results = []
-        for doc, score in results:
-            # Ensure score is within valid range
-            normalized_score = max(0.0, min(1.0, abs(score)))
-            normalized_results.append((doc, normalized_score))
-            
-        return normalized_results
+        print(f"Retrieved {len(results)} documents with scores: {[score for _, score in results]}")
+        return results
         
     except Exception as e:
-        print(f"Primary retrieval failed, trying fallback: {e}")
+        print(f"Primary retrieval failed: {e}")
         try:
             # Fallback method
             docs_dist = VDB.similarity_search_with_score(query, k=k)
-            normalized_results = []
+            results = []
             for doc, dist in docs_dist:
-                # Convert distance to similarity score (0-1 range)
+                # Convert distance to similarity score
                 similarity_score = max(0.0, min(1.0, 1.0 - abs(float(dist))))
-                normalized_results.append((doc, similarity_score))
-                
-            return normalized_results
+                results.append((doc, similarity_score))
+            print(f"Fallback retrieval got {len(results)} documents")
+            return results
             
         except Exception as fallback_error:
-            print(f"All retrieval methods failed: {fallback_error}\n{format_exc()}")
+            print(f"All retrieval methods failed: {fallback_error}")
             return []
 
 def answer_from_context(question: str) -> Dict[str, Any]:
@@ -167,32 +236,41 @@ def answer_from_context(question: str) -> Dict[str, Any]:
     if VDB:
         try:
             pairs = retrieve_with_scores(question, k=4)
-            # Filter by relevance threshold and ensure valid scores
+            # Filter by relevance threshold
             kept = [(d, score) for (d, score) in pairs if score is not None and score >= RELEVANCE_THRESHOLD]
             
             if kept:
                 docs = [d for d, _ in kept]
                 context = "\n\n".join(d.page_content[:400] for d in docs)
                 sources = format_sources(docs)
-                print(f"Retrieved {len(kept)} relevant documents with scores: {[score for _, score in kept]}")
+                print(f"Using {len(kept)} relevant documents")
                 
         except Exception as e:
-            print(f"Context retrieval failed: {e}\n{format_exc()}")
+            print(f"Context retrieval failed: {e}")
 
-    # Simple prompt
+    # Create prompt based on LLM type
     if context:
-        prompt = f"Based on the following context about Nigerian food, please answer the question:\n\nContext: {context}\n\nQuestion: {question}\n\nAnswer:"
+        if LLM_TASK_CHOSEN and "chat" in LLM_TASK_CHOSEN:
+            # For chat models, use a more conversational prompt
+            prompt = f"You are a helpful assistant specializing in Nigerian food. Based on the following information, please answer the user's question.\n\nContext: {context}\n\nQuestion: {question}\n\nAnswer:"
+        else:
+            # For text generation models, use a simpler prompt
+            prompt = f"Context: {context}\n\nQuestion: {question}\nAnswer:"
     else:
-        prompt = f"Question: {question}\n\nAnswer:"
+        if LLM_TASK_CHOSEN and "chat" in LLM_TASK_CHOSEN:
+            prompt = f"You are a helpful assistant specializing in Nigerian food. Please answer this question: {question}"
+        else:
+            prompt = f"Question about Nigerian food: {question}\nAnswer:"
     
-    # Keep it short
+    # Keep prompt reasonable length
     if len(prompt) > 1500:
         prompt = prompt[:1500] + "..."
 
     try:
-        print(f"Sending prompt to LLM (length: {len(prompt)})")
+        print(f"Sending prompt to LLM (task: {LLM_TASK_CHOSEN}, length: {len(prompt)})")
         response = LLM.invoke(prompt)
         
+        # Handle different response types
         if hasattr(response, 'content'):
             text = response.content.strip()
         elif isinstance(response, str):
@@ -202,17 +280,27 @@ def answer_from_context(question: str) -> Dict[str, Any]:
             
         if not text:
             return {"answer": "I couldn't generate a response. Please try rephrasing your question.", "sources": []}
+        
+        # Clean up response if it repeats the prompt
+        if "Question:" in text and "Answer:" in text:
+            parts = text.split("Answer:")
+            if len(parts) > 1:
+                text = parts[-1].strip()
+        
+        print(f"Generated response: {text[:100]}...")
             
-        # Show sources only for recipe-related responses
+        # Return response with sources for detailed answers
         if sources and (len(text) > 80 or any(word in text.lower() for word in ['ingredient', 'cook', 'recipe', 'step', 'add', 'heat', 'preparation'])):
             return {"answer": text, "sources": sources}
         else:
             return {"answer": text, "sources": []}
         
     except Exception as e:
-        error_details = f"LLM invoke error: {e}\n{format_exc()}\nTask chosen: {LLM_TASK_CHOSEN}"
+        error_details = f"LLM invoke error: {e}\nTask chosen: {LLM_TASK_CHOSEN}"
         print(error_details)
-        # Fallback response that doesn't require LLM
+        print(f"Full traceback: {format_exc()}")
+        
+        # Fallback response
         if sources:
             return {"answer": "I found some information about this in my database. Could you please rephrase your question more specifically?", "sources": sources}
         else:
@@ -233,11 +321,13 @@ async def health_check():
     return {
         "status": "ok",
         "chroma_present": chroma_present(CHROMA_DIR),
+        "chroma_initialized": bool(VDB),
         "llm_initialized": bool(LLM),
+        "embeddings_initialized": bool(EMB),
         "hf_model": HF_MODEL,
         "hf_embed_model": HF_EMBED_MODEL,
         "relevance_threshold": RELEVANCE_THRESHOLD,
-        "hf_task_chosen": LLM_TASK_CHOSEN,
+        "llm_task_chosen": LLM_TASK_CHOSEN,
         "last_llm_error": LAST_LLM_ERROR,
     }
 
@@ -256,3 +346,4 @@ async def ask(request: AskRequest) -> Dict[str, Any]:
     except Exception as e:
         print(f"[/ask] Critical error: {e}\n{format_exc()}")
         return {"answer": NOT_FOUND_TEXT, "sources": []}
+
