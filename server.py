@@ -9,6 +9,8 @@ from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
 import warnings
+from langchain_huggingface import ChatHuggingFace
+
 
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
 
@@ -53,43 +55,32 @@ def _ensure_hf_env():
         raise RuntimeError("HF_TOKEN env var is missing.")
     os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 
+
+
 def build_llm():
     global LLM_TASK_CHOSEN, LAST_LLM_ERROR
     try:
         _ensure_hf_env()
 
-        # Try conversational task first, then fallback to text-generation
-        try:
-            llm = HuggingFaceEndpoint(
-                repo_id=HF_MODEL,
-                task="conversational",  # Primary attempt
-                temperature=HF_TEMPERATURE,
-                max_new_tokens=HF_MAX_NEW_TOKENS,
-                timeout=60,
-                return_full_text=False
-            )
-            LLM_TASK_CHOSEN = "conversational"
-        except Exception as conv_error:
-            print(f"Conversational task failed, trying text-generation: {conv_error}")
-            llm = HuggingFaceEndpoint(
-                repo_id=HF_MODEL,
-                task="text-generation",  # Fallback
-                temperature=HF_TEMPERATURE,
-                max_new_tokens=HF_MAX_NEW_TOKENS,
-                timeout=60,
-                return_full_text=False
-            )
-            LLM_TASK_CHOSEN = "text-generation"
+        # Use ChatHuggingFace instead of HuggingFaceEndpoint
+        llm = ChatHuggingFace(
+            repo_id=HF_MODEL,
+            task="conversational",
+            temperature=HF_TEMPERATURE,
+            max_new_tokens=HF_MAX_NEW_TOKENS,
+            timeout=60,
+        )
 
+        LLM_TASK_CHOSEN = "conversational"
         LAST_LLM_ERROR = None
-        print(f"LLM ready: {HF_MODEL} with task: {LLM_TASK_CHOSEN}")
+        print(f"LLM ready: {HF_MODEL} with ChatHuggingFace")
         return llm
 
     except Exception as e:
         LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
         print(f"LLM init failed: {LAST_LLM_ERROR}")
         return None
-
+    
 def build_embeddings():
     try:
         _ensure_hf_env()
