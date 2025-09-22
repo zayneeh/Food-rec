@@ -59,15 +59,15 @@ def build_llm():
         _ensure_hf_env()
 
         llm = HuggingFaceEndpoint(
-            repo_id=HF_MODEL,            # e.g. "Qwen/Qwen2.5-7B-Instruct" or "mistralai/Mistral-7B-Instruct-v0.2"
-            task="text-generation",      # <- force the right pipeline
+            repo_id=HF_MODEL,
+            task="conversational",  
             temperature=HF_TEMPERATURE,
             max_new_tokens=HF_MAX_NEW_TOKENS,
-            timeout=60,                  # <- keep, this is fine
-            return_full_text=False       # <- top-level; not inside model_kwargs
+            timeout=60,
+            return_full_text=False
         )
 
-        LLM_TASK_CHOSEN = "text-generation"
+        LLM_TASK_CHOSEN = "conversational"
         LAST_LLM_ERROR = None
         print(f"LLM ready: {HF_MODEL}")
         return llm
@@ -76,7 +76,6 @@ def build_llm():
         LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
         print(f"LLM init failed: {LAST_LLM_ERROR}")
         return None
-
 
 def build_embeddings():
     try:
