@@ -17,10 +17,10 @@ from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")  # REQUIRED
-HF_MODEL = os.environ.get("HF_MODEL", "HuggingFaceH4/zephyr-7b-beta")  # Proven working chat model
+HF_MODEL = os.environ.get("HF_MODEL", "openai-community/gpt2")  # Simple, always works
 HF_EMBED_MODEL = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 HF_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.7"))
-HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "256"))
+HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "100"))
 
 RELEVANCE_THRESHOLD = float(os.environ.get("RELEVANCE_THRESHOLD", "0.35"))
 NOT_FOUND_TEXT = "I don't have specific information about that in my database."
@@ -61,8 +61,6 @@ def _ensure_hf_env():
         raise RuntimeError("HF_TOKEN env var is missing.")
     os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 
-from langchain_huggingface import HuggingFaceEndpoint
-
 def build_llm():
     global LLM_TASK_CHOSEN, LAST_LLM_ERROR
     try:
@@ -70,16 +68,12 @@ def build_llm():
 
         llm = HuggingFaceEndpoint(
             repo_id=HF_MODEL,
-            task="text-generation",      # important
             temperature=HF_TEMPERATURE,
             max_new_tokens=HF_MAX_NEW_TOKENS,
-            timeout=60,
-            max_retries=3,
-            return_full_text=False       # <- move here (not in model_kwargs)
-            # model_kwargs={}            # <- remove or leave empty
+            timeout=30
         )
 
-        LLM_TASK_CHOSEN = "text-generation"
+        LLM_TASK_CHOSEN = "auto"
         LAST_LLM_ERROR = None
         print(f"LLM ready: {HF_MODEL}")
         return llm
@@ -88,7 +82,6 @@ def build_llm():
         LAST_LLM_ERROR = f"{type(e).__name__}: {e}"
         print(f"LLM init failed: {LAST_LLM_ERROR}")
         return None
-
 
 def build_embeddings():
     try:
@@ -130,12 +123,6 @@ def format_sources(docs) -> List[Dict[str, Any]]:
         })
     return out
 
-def build_simple_prompt(context: str, question: str) -> str:
-    if context.strip():
-        return f"Context: {context}\n\nQuestion: {question}\nAnswer:"
-    else:
-        return f"You are a helpful Nigerian food assistant.\nQuestion: {question}\nAnswer:"
-
 def retrieve_with_scores(query: str, k: int = 4) -> List[Tuple[Any, float]]:
     if not VDB:
         return []
@@ -154,39 +141,29 @@ def answer_from_context(question: str) -> Dict[str, Any]:
     if not LLM:
         return {"answer": "I'm sorry, the assistant is temporarily unavailable.", "sources": []}
 
-    # Always try to get context from database - let LLM decide if it's useful
+    # Get context from database
     context = ""
     sources = []
     if VDB:
         try:
             pairs = retrieve_with_scores(question, k=4)
-            # Fix the relevance score warning by filtering properly  
             kept = [(d, abs(s)) for (d, s) in pairs if s is not None and abs(s) >= RELEVANCE_THRESHOLD]
             if kept:
                 docs = [d for d, _ in kept]
-                context = "\n\n".join(d.page_content[:500] for d in docs)
+                context = "\n\n".join(d.page_content[:400] for d in docs)
                 sources = format_sources(docs)
         except Exception as e:
             print(f"Context retrieval failed: {e}")
 
-    # Create prompt - LLM decides whether to use context or not
+    # Simple prompt
     if context:
-        prompt = f"""You are a helpful Nigerian food assistant. You can have normal conversations and also help with Nigerian food questions.
-
-Here's some information from my database that might be relevant:
-{context}
-
-Question: {question}
-Answer (use the database info only if it's actually helpful for this question):"""
+        prompt = f"Context: {context}\n\nUser: {question}\nAssistant:"
     else:
-        prompt = f"""You are a helpful Nigerian food assistant. You can have normal conversations and also help with Nigerian food questions.
-
-Question: {question}  
-Answer:"""
+        prompt = f"User: {question}\nAssistant:"
     
-    # Limit prompt length
-    if len(prompt) > 2000:
-        prompt = prompt[:2000] + "..."
+    # Keep it short
+    if len(prompt) > 1500:
+        prompt = prompt[:1500] + "..."
 
     try:
         response = LLM.invoke(prompt)
@@ -201,16 +178,15 @@ Answer:"""
         if not text:
             return {"answer": "I couldn't generate a response. Please try rephrasing your question.", "sources": []}
             
-        # Only include sources if the LLM response seems to be using recipe/food info
-        # Simple heuristic: if response is long or mentions ingredients/steps, include sources
-        if sources and (len(text) > 100 or any(word in text.lower() for word in ['ingredient', 'cook', 'recipe', 'step', 'add', 'heat'])):
+        # Show sources only for recipe-related responses
+        if sources and (len(text) > 80 or any(word in text.lower() for word in ['ingredient', 'cook', 'recipe', 'step', 'add', 'heat', 'preparation'])):
             return {"answer": text, "sources": sources}
         else:
             return {"answer": text, "sources": []}
         
     except Exception as e:
         print(f"LLM invoke error: {e}\n{format_exc()}")
-        return {"answer": "I'm having trouble generating a response right now. Please try again.", "sources": []}
+        return {"answer": "Hello! I'm here to help with Nigerian food questions. What would you like to know?", "sources": []}
 
 # ──────────────────────────────────────────
 # API
