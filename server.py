@@ -15,7 +15,7 @@ HF_TOKEN = os.environ.get("HF_TOKEN", "")
 HF_MODEL = os.environ.get("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")  
 HF_EMBED_MODEL = os.environ.get("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 HF_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.7"))
-HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "100"))
+HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "256"))
 
 RELEVANCE_THRESHOLD = float(os.environ.get("RELEVANCE_THRESHOLD", "0.35"))
 NOT_FOUND_TEXT = "I don't have specific information about that in my database."
@@ -59,13 +59,12 @@ def build_llm():
         _ensure_hf_env()
 
         llm = HuggingFaceEndpoint(
-            repo_id=HF_MODEL,
-            task="text-generation",         
+            repo_id=HF_MODEL,            # e.g. "Qwen/Qwen2.5-7B-Instruct" or "mistralai/Mistral-7B-Instruct-v0.2"
+            task="text-generation",      # <- force the right pipeline
             temperature=HF_TEMPERATURE,
             max_new_tokens=HF_MAX_NEW_TOKENS,
-            timeout=60,
-            max_retries=3,
-            return_full_text=False         
+            timeout=60,                  # <- keep, this is fine
+            return_full_text=False       # <- top-level; not inside model_kwargs
         )
 
         LLM_TASK_CHOSEN = "text-generation"
