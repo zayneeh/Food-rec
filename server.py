@@ -8,6 +8,7 @@ from starlette.requests import Request
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
+import warnings
 
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "chroma_db")
 
@@ -19,7 +20,6 @@ HF_MAX_NEW_TOKENS = int(os.environ.get("LLM_MAX_NEW_TOKENS", "256"))
 
 RELEVANCE_THRESHOLD = float(os.environ.get("RELEVANCE_THRESHOLD", "0.35"))
 NOT_FOUND_TEXT = "I don't have specific information about that in my database."
-
 
 LLM_TASK_CHOSEN: str | None = None
 LAST_LLM_ERROR: str | None = None
@@ -58,18 +58,31 @@ def build_llm():
     try:
         _ensure_hf_env()
 
-        llm = HuggingFaceEndpoint(
-            repo_id=HF_MODEL,
-            task="conversational",  
-            temperature=HF_TEMPERATURE,
-            max_new_tokens=HF_MAX_NEW_TOKENS,
-            timeout=60,
-            return_full_text=False
-        )
+        # Try conversational task first, then fallback to text-generation
+        try:
+            llm = HuggingFaceEndpoint(
+                repo_id=HF_MODEL,
+                task="conversational",  # Primary attempt
+                temperature=HF_TEMPERATURE,
+                max_new_tokens=HF_MAX_NEW_TOKENS,
+                timeout=60,
+                return_full_text=False
+            )
+            LLM_TASK_CHOSEN = "conversational"
+        except Exception as conv_error:
+            print(f"Conversational task failed, trying text-generation: {conv_error}")
+            llm = HuggingFaceEndpoint(
+                repo_id=HF_MODEL,
+                task="text-generation",  # Fallback
+                temperature=HF_TEMPERATURE,
+                max_new_tokens=HF_MAX_NEW_TOKENS,
+                timeout=60,
+                return_full_text=False
+            )
+            LLM_TASK_CHOSEN = "text-generation"
 
-        LLM_TASK_CHOSEN = "conversational"
         LAST_LLM_ERROR = None
-        print(f"LLM ready: {HF_MODEL}")
+        print(f"LLM ready: {HF_MODEL} with task: {LLM_TASK_CHOSEN}")
         return llm
 
     except Exception as e:
@@ -121,18 +134,40 @@ def retrieve_with_scores(query: str, k: int = 4) -> List[Tuple[Any, float]]:
     if not VDB:
         return []
     try:
-        return VDB.similarity_search_with_relevance_scores(query, k=k)
-    except Exception:
+        # Try the primary method first
+        results = VDB.similarity_search_with_relevance_scores(query, k=k)
+        
+        # Normalize scores to be between 0 and 1
+        normalized_results = []
+        for doc, score in results:
+            # Ensure score is within valid range
+            normalized_score = max(0.0, min(1.0, abs(score)))
+            normalized_results.append((doc, normalized_score))
+            
+        return normalized_results
+        
+    except Exception as e:
+        print(f"Primary retrieval failed, trying fallback: {e}")
         try:
+            # Fallback method
             docs_dist = VDB.similarity_search_with_score(query, k=k)
-            return [(doc, max(0.0, 1.0 - float(dist))) for doc, dist in docs_dist]
-        except Exception as e:
-            print(f"Retrieval error: {e}\n{format_exc()}")
+            normalized_results = []
+            for doc, dist in docs_dist:
+                # Convert distance to similarity score (0-1 range)
+                similarity_score = max(0.0, min(1.0, 1.0 - abs(float(dist))))
+                normalized_results.append((doc, similarity_score))
+                
+            return normalized_results
+            
+        except Exception as fallback_error:
+            print(f"All retrieval methods failed: {fallback_error}\n{format_exc()}")
             return []
 
 def answer_from_context(question: str) -> Dict[str, Any]:
     # If LLM not available, provide basic fallback
     if not LLM:
+        error_msg = f"LLM not initialized. Last error: {LAST_LLM_ERROR}"
+        print(error_msg)
         return {"answer": "I'm sorry, the assistant is temporarily unavailable.", "sources": []}
 
     # Get context from database
@@ -141,25 +176,30 @@ def answer_from_context(question: str) -> Dict[str, Any]:
     if VDB:
         try:
             pairs = retrieve_with_scores(question, k=4)
-            kept = [(d, abs(s)) for (d, s) in pairs if s is not None and abs(s) >= RELEVANCE_THRESHOLD]
+            # Filter by relevance threshold and ensure valid scores
+            kept = [(d, score) for (d, score) in pairs if score is not None and score >= RELEVANCE_THRESHOLD]
+            
             if kept:
                 docs = [d for d, _ in kept]
                 context = "\n\n".join(d.page_content[:400] for d in docs)
                 sources = format_sources(docs)
+                print(f"Retrieved {len(kept)} relevant documents with scores: {[score for _, score in kept]}")
+                
         except Exception as e:
-            print(f"Context retrieval failed: {e}")
+            print(f"Context retrieval failed: {e}\n{format_exc()}")
 
     # Simple prompt
     if context:
-        prompt = f"Context: {context}\n\nUser: {question}\nAssistant:"
+        prompt = f"Based on the following context about Nigerian food, please answer the question:\n\nContext: {context}\n\nQuestion: {question}\n\nAnswer:"
     else:
-        prompt = f"User: {question}\nAssistant:"
+        prompt = f"Question: {question}\n\nAnswer:"
     
     # Keep it short
     if len(prompt) > 1500:
         prompt = prompt[:1500] + "..."
 
     try:
+        print(f"Sending prompt to LLM (length: {len(prompt)})")
         response = LLM.invoke(prompt)
         
         if hasattr(response, 'content'):
@@ -179,8 +219,13 @@ def answer_from_context(question: str) -> Dict[str, Any]:
             return {"answer": text, "sources": []}
         
     except Exception as e:
-        print(f"LLM invoke error: {e}\n{format_exc()}")
-        return {"answer": "Hello! I'm here to help with Nigerian food questions. What would you like to know?", "sources": []}
+        error_details = f"LLM invoke error: {e}\n{format_exc()}\nTask chosen: {LLM_TASK_CHOSEN}"
+        print(error_details)
+        # Fallback response that doesn't require LLM
+        if sources:
+            return {"answer": "I found some information about this in my database. Could you please rephrase your question more specifically?", "sources": sources}
+        else:
+            return {"answer": "Hello! I'm here to help with Nigerian food questions. What would you like to know?", "sources": []}
 
 # ──────────────────────────────────────────
 # API
