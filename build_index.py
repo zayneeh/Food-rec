@@ -1,9 +1,3 @@
-"""
-build_index.py
-Builds a Chroma vector database using Hugging Face Inference API embeddings.
-Reads configuration from environment variables or a local .env file.
-"""
-
 import os
 import shutil
 from pathlib import Path
@@ -14,10 +8,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import CSVLoader
 from langchain_community.vectorstores import Chroma
 
-# ── Load .env file if present ──
 load_dotenv()
 
-# ── Environment variables with defaults ──
 HF_TOKEN       = os.getenv("HF_TOKEN", "")
 HF_EMBED_MODEL = os.getenv("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 DATA_CSV       = os.getenv("DATA_CSV", "data/Nigerian meals.csv")
@@ -29,7 +21,6 @@ if not HF_TOKEN:
         "HF_TOKEN is missing.  Set it in a .env file or your environment."
     )
 
-# The embeddings client looks for this specific variable
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 
 print(f"[build] Loading CSV: {DATA_CSV}")
@@ -45,7 +36,7 @@ for d in chunks:
 print(f"[build] Creating HF Endpoint embeddings: {HF_EMBED_MODEL}")
 emb = HuggingFaceEndpointEmbeddings(model=HF_EMBED_MODEL)
 
-# Optional: clear old DB so we always rebuild from scratch
+# clear old DB if it exists
 if os.path.isdir(CHROMA_DIR):
     print(f"[build] Removing old DB at {CHROMA_DIR}")
     shutil.rmtree(CHROMA_DIR)
@@ -58,4 +49,4 @@ Chroma.from_documents(
     collection_name=COLLECTION,
 )
 
-print("[build] ✅ Finished building Chroma index.")
+print("[build] Finished building Chroma index.")
