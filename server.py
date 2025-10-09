@@ -42,9 +42,7 @@ async def log_requests(request: Request, call_next):
     print(f"{request.method} {request.url.path} -> {resp.status_code}")
     return resp
 
-# ──────────────────────────────────────────
 # Builders
-# ──────────────────────────────────────────
 def chroma_present(path: str) -> bool:
     return os.path.isdir(path) and any(os.scandir(path))
 
@@ -62,11 +60,11 @@ def build_llm():
         # Try different approaches for Qwen
         print(f"Attempting to initialize {HF_MODEL}...")
         
-        # Method 1: Try with text-generation task explicitly
+        # Try with text-generation task explicitly
         try:
             base_llm = HuggingFaceEndpoint(
                 repo_id=HF_MODEL,
-                task="text-generation",  # Explicit text-generation for Qwen
+                task="text-generation",  
                 temperature=HF_TEMPERATURE,
                 max_new_tokens=HF_MAX_NEW_TOKENS,
                 timeout=60,
@@ -91,7 +89,7 @@ def build_llm():
         except Exception as e1:
             print(f"Method 1 failed: {e1}")
             
-            # Method 2: Try without explicit task
+            # Try without explicit task
             try:
                 base_llm = HuggingFaceEndpoint(
                     repo_id=HF_MODEL,
@@ -110,7 +108,7 @@ def build_llm():
             except Exception as e2:
                 print(f"Method 2 failed: {e2}")
                 
-                # Method 3: Try just the base endpoint without chat wrapper
+                # Try just the base endpoint without chat wrapper
                 try:
                     llm = HuggingFaceEndpoint(
                         repo_id=HF_MODEL,
@@ -152,7 +150,7 @@ def build_embeddings():
         print(f"Embeddings init failed: {e}\n{format_exc()}")
         return None
 
-# Build once at startup
+#  Startup
 print("Initializing components...")
 LLM = build_llm()
 EMB = build_embeddings()
@@ -183,9 +181,9 @@ else:
     if not chroma_present(CHROMA_DIR):
         print(f"Skipping Chroma - directory {CHROMA_DIR} not present or empty")
 
-# ──────────────────────────────────────────
-# Retrieval helpers
-# ──────────────────────────────────────────
+
+# Helper functions
+
 def format_sources(docs) -> List[Dict[str, Any]]:
     out = []
     for d in docs:
@@ -306,9 +304,8 @@ def answer_from_context(question: str) -> Dict[str, Any]:
         else:
             return {"answer": "Hello! I'm here to help with Nigerian food questions. What would you like to know?", "sources": []}
 
-# ──────────────────────────────────────────
+
 # API
-# ──────────────────────────────────────────
 class AskRequest(BaseModel):
     question: str
 
