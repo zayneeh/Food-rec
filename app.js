@@ -1,3 +1,5 @@
+window.RECO_API_BASE = 'https://food-recommender-scq5.onrender.com/ask';
+
 // Menu toggle for mobile
 const menuToggle = document.querySelector('.menu-toggle');
 const navLinks = document.querySelector('.nav-links');
@@ -14,7 +16,7 @@ menuToggle.addEventListener('click', () => {
   navLinks.style.padding = '1rem';
 });
 
-// ===== FOOD RECOMMENDER MODAL FUNCTIONALITY =====
+// RECOMMENDER MODAL
 
 // Modal control functions
 function openRecommender() {
@@ -28,11 +30,10 @@ function closeRecommender() {
 }
 
 function showStep(stepId) {
-  // Hide all steps
+
   document.querySelectorAll('.reco-step').forEach(step => {
     step.style.display = 'none';
   });
-  // Show target step
   document.getElementById(stepId).style.display = 'block';
 }
 
@@ -42,29 +43,47 @@ function clearResults() {
   document.getElementById('chatWindow').innerHTML = '';
 }
 
-// API call function
+// API call function 
 async function askAPI(question) {
+  if (!window.RECO_API_BASE) throw new Error('API URL not configured');
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 45000);
+
   try {
     const res = await fetch(window.RECO_API_BASE, {
       method: 'POST',
+      mode: 'cors',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question })
+      body: JSON.stringify({ question }),
+      cache: 'no-store',
+      signal: ctrl.signal
     });
-    
+
+    clearTimeout(timer);
+
     if (!res.ok) {
-      throw new Error(`API Error: ${res.status} ${res.statusText}`);
+      const text = await res.text().catch(() => '');
+      throw new Error(`API Error ${res.status} ${res.statusText} — ${text.slice(0, 300)}`);
     }
-    
-    return await res.json();
-  } catch (error) {
-    console.error('API call failed:', error);
-    throw error;
+
+    const data = await res.json().catch(() => ({}));
+    if (!data || typeof data !== 'object') throw new Error('Invalid JSON from API');
+    if (!data.answer) data.answer = 'No answer received from API';
+    if (!Array.isArray(data.sources)) data.sources = [];
+    return data;
+
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') throw new Error('Request timed out');
+    throw err;
   }
 }
 
-// Step navigation event listeners
+
+// navigation 
 document.addEventListener('DOMContentLoaded', () => {
-  // Step 0 -> Choose mode
+  //  Choose mode
   document.getElementById('startChatBtn')?.addEventListener('click', () => {
     showStep('reco-step-chat');
   });
@@ -90,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showStep('reco-step-1');
   });
 
-  // Step 1 -> Choose recommendation type
+  // Choose recommendation type
   document.getElementById('byIngredientsBtn')?.addEventListener('click', () => {
     showStep('reco-step-ingredients');
   });

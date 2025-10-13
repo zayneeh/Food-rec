@@ -7,24 +7,22 @@
   <link rel="stylesheet" href="css/style.css"/>
 </head>
 <body>
-  <!-- Header -->
   <header>
     <nav>
-      <div class="logo">Zee Food Archive</div>
+      <div class="logo">Zee's Food Archive</div>
       <ul class="nav-links">
         <li><a href="#home">Home</a></li>
         <li><a href="#articles">Articles</a></li>
         <li><a href="#history">History</a></li>
         <li><a href="#recipes">Recipes</a></li>
         <li><a href="#about">About</a></li>
-        <!-- Make this open the modal, don't navigate to a JS file -->
         <li><a href="javascript:void(0)" onclick="openRecommender()">Food Recommender</a></li>
       </ul>
       <div class="menu-toggle">☰</div>
     </nav>
   </header>
 
-  <!-- Hero Section -->
+  
   <section class="hero" id="home">
     <h1>Discover Nigeria's Rich Food Heritage</h1>
     <p>Explore centuries of culinary traditions, history of crops, meals and recipes</p>
@@ -136,7 +134,7 @@
   <!-- Floating Action Button -->
   <div class="fab" aria-label="Open food recommender" onclick="openRecommender()">🍽️</div>
 
-  <!-- Food Recommender Modal (Step UI) -->
+  <!-- Food Recommender Modal -->
 <div class="modal" id="recommenderModal">
   <div class="modal-content">
     <span class="modal-close" onclick="closeRecommender()">&times;</span>
@@ -196,14 +194,9 @@
   </div>
 </div>
 
-<!-- Configure API endpoint -->
 <script>
-  // IMPORTANT: Replace with your actual server URL
-  window.RECO_API_BASE = 'http://localhost:8000/ask';  // For local testing
-  // window.RECO_API_BASE = 'https://YOUR-APP.onrender.com/ask';  // For production
+  window.RECO_API_BASE = 'https://food-recommender-scq5.onrender.com/ask';  
 </script>
-
-<!-- Include the main app JavaScript -->
 <script src="app.js"></script>
 
 </body>

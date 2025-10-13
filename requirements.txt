@@ -1,9 +1,9 @@
-langchain
-langchain-community
-langchain-google-vertexai
-chromadb
-tiktoken
-pandas
 fastapi
 uvicorn
-google-cloud-aiplatform
+langchain
+langchain-community         
+langchain-huggingface       
+chromadb
+python-dotenv
+pandas
+langchain-text-splitters

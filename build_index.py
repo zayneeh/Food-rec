@@ -1,29 +1,52 @@
 import os
-from langchain_community.document_loaders import CSVLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_vertexai import VertexAIEmbeddings
-from langchain_community.vectorstores import Chroma
+import shutil
+from pathlib import Path
 from dotenv import load_dotenv
 
-# ---- Vertex AI auth/region ----
-load_dotenv()
-PROJECT_ID = os.environ["GCP_PROJECT_ID"]          
-LOCATION   = os.environ.get("GCP_LOCATION", "us-central1")
-SA_KEY     = os.environ["GCP_SA_KEY"]
+from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import CSVLoader
+from langchain_community.vectorstores import Chroma
 
-# ---- Load CSV and split ----
-loader = CSVLoader(
-    file_path=r"data\Nigerian meals.csv",  
-    encoding="utf-8-sig"                    
-)
+load_dotenv()
+
+HF_TOKEN       = os.getenv("HF_TOKEN", "")
+HF_EMBED_MODEL = os.getenv("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+DATA_CSV       = os.getenv("DATA_CSV", "data/Nigerian meals.csv")
+CHROMA_DIR     = os.getenv("CHROMA_DIR", "chroma_db")
+COLLECTION     = os.getenv("CHROMA_COLLECTION", "knowledge_base")
+
+if not HF_TOKEN:
+    raise RuntimeError(
+        "HF_TOKEN is missing.  Set it in a .env file or your environment."
+    )
+
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
+
+print(f"[build] Loading CSV: {DATA_CSV}")
+loader = CSVLoader(file_path=DATA_CSV, encoding="utf-8-sig")
 docs = loader.load()
+
+print("[build] Splitting documents…")
 splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
 chunks = splitter.split_documents(docs)
+for d in chunks:
+    d.metadata["source"] = d.metadata.get("source", DATA_CSV)
 
-# ---- Vertex AI embeddings ----
-emb = VertexAIEmbeddings(project=PROJECT_ID, location=LOCATION, model_name="text-embedding-004")
+print(f"[build] Creating HF Endpoint embeddings: {HF_EMBED_MODEL}")
+emb = HuggingFaceEndpointEmbeddings(model=HF_EMBED_MODEL)
 
-# ---- Persist to Chroma ----
-CHROMA_DIR = "chroma_db"
-Chroma.from_documents(chunks, emb, persist_directory=CHROMA_DIR, collection_name="knowledge_base")
-print("Index built to", CHROMA_DIR)
+# clear old DB if it exists
+if os.path.isdir(CHROMA_DIR):
+    print(f"[build] Removing old DB at {CHROMA_DIR}")
+    shutil.rmtree(CHROMA_DIR)
+
+print(f"[build] Writing Chroma DB to: {CHROMA_DIR}")
+Chroma.from_documents(
+    documents=chunks,
+    embedding=emb,
+    persist_directory=CHROMA_DIR,
+    collection_name=COLLECTION,
+)
+
+print("[build] Finished building Chroma index.")
